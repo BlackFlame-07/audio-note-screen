@@ -162,6 +162,7 @@ export class AsciiPixelEngine {
   public holdDuration: number = 1.60;
   public lineStartTimes: number[] = [0.0, 1.87, 3.07, 4.10, 5.67];
   public currentTimeSec: number = 0;
+  public fluidFlowPhase: number = 0;
   public currentAudioEnergy: number = 0.1;
   private isCharLayoutReady: boolean = false;
   private lastTimeSec: number = 0;
@@ -299,6 +300,13 @@ export class AsciiPixelEngine {
     this.lastTimeSec = timeSec;
     this.currentTimeSec = timeSec;
     this.currentAudioEnergy = audioEnergy;
+
+    // Advance dynamic fluid flow phase with voice-reactive acceleration
+    const clampedAudio = Math.max(0.001, Math.min(1.0, audioEnergy));
+    const audioDbfs = 20 * Math.log10(clampedAudio);
+    const audioPulse = Math.max(0, Math.min(1.0, (audioDbfs + 42) / 38));
+    const flowVelocity = 0.80 + audioPulse * 0.45;
+    this.fluidFlowPhase += dt * flowVelocity;
 
     const isWhite = this.theme === 'WHITE';
     const primaryColor = isWhite ? '#000000' : '#FFFFFF';
@@ -550,7 +558,8 @@ export class AsciiPixelEngine {
    */
   public renderRecordingHalftone(ctx: CanvasRenderingContext2D) {
     // Pure Black & White Halftone Fluid Organic Blob Field
-    // Decibel-driven acoustic pulsing: scales smoothly with voice volume (dBFS)
+    // Dynamic morphing fluid metaball field with continuous orbital drifting,
+    // rotational eccentricity stretching, amoebic surface waves, and decibel-driven resonance.
     const isWhite = this.theme === 'WHITE';
     
     // Decibel calculation: -50 dBFS (ambient room quiet) to 0 dBFS (peak voice)
@@ -559,71 +568,93 @@ export class AsciiPixelEngine {
     // Voice gate: -42 dBFS baseline silence, -4 dBFS loud speech peak
     const pulseStrength = Math.max(0, Math.min(1.0, (dbfs + 42) / 38));
     
-    const t = this.currentTimeSec * 0.75;
-    // Decibel swell: 0.75x resting contraction -> 1.40x vocal expansion
-    const swell = 0.75 + pulseStrength * 0.65;
+    // Use dynamic fluid flow phase for continuous organic evolution
+    const t = this.fluidFlowPhase;
+    // Decibel swell: 0.76x resting contraction -> 1.38x vocal expansion
+    const swell = 0.76 + pulseStrength * 0.62;
 
     const COLS = 50;
     const ROWS = 72;
     const cellW = this.width / COLS;
     const cellH = this.height / ROWS;
 
-    // Organic morphing metaball attractors dynamically modulated by voice decibels
+    // Dynamic, continuously morphing and circulating organic metaballs
     const blobs = [
-      // Top-left macro cloud
+      // 1. Primary Macro Amoeba (Roams across the upper half in an organic Lissajous figure)
       {
-        x: this.width * (0.16 + Math.sin(t * 0.7) * 0.05),
-        y: this.height * (0.10 + Math.cos(t * 0.6) * 0.04),
-        rx: 120 * swell, ry: 95 * swell,
-        power: 1.1 * (0.8 + pulseStrength * 0.4),
+        x: this.width * (0.38 + 0.22 * Math.sin(t * 0.45) + 0.08 * Math.cos(t * 0.90)),
+        y: this.height * (0.22 + 0.12 * Math.cos(t * 0.38) + 0.06 * Math.sin(t * 0.85)),
+        rx: (88 + 16 * Math.sin(t * 0.60)) * swell,
+        ry: (70 + 14 * Math.cos(t * 0.52)) * swell,
+        angle: t * 0.32 + Math.sin(t * 0.65) * 0.45,
+        power: 1.15 * (0.85 + pulseStrength * 0.35),
+        phase: 0.0,
         hasCore: true,
       },
-      // Top-center luminous core
+      // 2. Secondary Macro Amoeba (Roams across the lower half, undulating in counter-phase)
       {
-        x: this.width * (0.52 + Math.cos(t * 0.8) * 0.06),
-        y: this.height * (0.12 + Math.sin(t * 0.7) * 0.04),
-        rx: 95 * swell, ry: 80 * swell,
-        power: 1.15 * (0.8 + pulseStrength * 0.45),
+        x: this.width * (0.58 + 0.22 * Math.cos(t * 0.36 + 1.6) + 0.07 * Math.sin(t * 0.92)),
+        y: this.height * (0.62 + 0.16 * Math.sin(t * 0.42 + 0.9) + 0.05 * Math.cos(t * 0.78)),
+        rx: (90 + 18 * Math.cos(t * 0.48 + 2.1)) * swell,
+        ry: (72 + 16 * Math.sin(t * 0.58 + 1.2)) * swell,
+        angle: -t * 0.28 + Math.cos(t * 0.45) * 0.50,
+        power: 1.12 * (0.85 + pulseStrength * 0.35),
+        phase: 2.1,
         hasCore: true,
       },
-      // Center-left standalone droplet
+      // 3. Fast Orbiting Droplet 1 (Slingshots across center, merging with macro amoebas and pinching off)
       {
-        x: this.width * (0.22 + Math.sin(t * 1.0 + 1.2) * 0.04),
-        y: this.height * (0.42 + Math.cos(t * 0.9 + 1.5) * 0.04),
-        rx: 44 * swell, ry: 44 * swell,
-        power: 1.05 * (0.8 + pulseStrength * 0.4),
+        x: this.width * (0.48 + 0.34 * Math.sin(t * 0.72 + 2.5) + 0.06 * Math.cos(t * 1.5)),
+        y: this.height * (0.44 + 0.32 * Math.cos(t * 0.65 + 1.8) + 0.05 * Math.sin(t * 1.3)),
+        rx: (38 + 8 * Math.sin(t * 0.85)) * swell,
+        ry: (34 + 8 * Math.cos(t * 0.85)) * swell,
+        angle: t * 0.75,
+        power: 1.05 * (0.85 + pulseStrength * 0.35),
+        phase: 4.2,
         hasCore: false,
       },
-      // Right-center edge cluster
+      // 4. Buoyant Bead (Mid-left buoyant bead, detaches and floats in negative space)
       {
-        x: this.width * (0.94 + Math.sin(t * 0.6 + 2.5) * 0.04),
-        y: this.height * (0.40 + Math.cos(t * 0.8 + 2.0) * 0.05),
-        rx: 80 * swell, ry: 90 * swell,
-        power: 1.0 * (0.8 + pulseStrength * 0.4),
+        x: this.width * (0.22 + 0.16 * Math.cos(t * 0.80 + 3.8)),
+        y: this.height * (0.52 + 0.22 * Math.sin(t * 0.60 + 2.4)),
+        rx: (32 + 8 * Math.cos(t * 1.05)) * swell,
+        ry: (30 + 8 * Math.sin(t * 1.05)) * swell,
+        angle: t * 0.45,
+        power: 1.02 * (0.85 + pulseStrength * 0.35),
+        phase: 1.5,
+        hasCore: false,
+      },
+      // 5. Dynamic Perimeter Surge (Top-Right edge tide influx)
+      {
+        x: this.width * (0.90 + 0.09 * Math.sin(t * 0.48 + 1.0)),
+        y: this.height * (0.16 + 0.14 * Math.cos(t * 0.58 + 3.2)),
+        rx: (72 + 14 * Math.sin(t * 0.68)) * swell,
+        ry: (78 + 16 * Math.cos(t * 0.52)) * swell,
+        angle: Math.sin(t * 0.38) * 0.35,
+        power: 1.05 * (0.85 + pulseStrength * 0.35),
+        phase: 3.3,
         hasCore: true,
       },
-      // Lower-center wide peninsula
+      // 6. Dynamic Perimeter Peninsula (Bottom-Left shoreline anchor)
       {
-        x: this.width * (0.34 + Math.cos(t * 0.5 + 3.1) * 0.06),
-        y: this.height * (0.64 + Math.sin(t * 0.7 + 3.0) * 0.05),
-        rx: 115 * swell, ry: 75 * swell,
-        power: 1.05 * (0.8 + pulseStrength * 0.4),
+        x: this.width * (0.12 + 0.10 * Math.cos(t * 0.52 + 4.6)),
+        y: this.height * (0.86 + 0.08 * Math.sin(t * 0.44 + 1.4)),
+        rx: (78 + 14 * Math.cos(t * 0.56)) * swell,
+        ry: (68 + 14 * Math.sin(t * 0.62)) * swell,
+        angle: Math.cos(t * 0.32) * 0.30,
+        power: 1.06 * (0.85 + pulseStrength * 0.35),
+        phase: 5.1,
         hasCore: true,
       },
-      // Bottom-right cluster
+      // 7. Dynamic Lower Satellite (Drifts smoothly along bottom channel)
       {
-        x: this.width * (0.85 + Math.sin(t * 0.7 + 4.2) * 0.05),
-        y: this.height * (0.84 + Math.cos(t * 0.6 + 4.0) * 0.05),
-        rx: 85 * swell, ry: 75 * swell,
-        power: 1.0 * (0.8 + pulseStrength * 0.4),
-        hasCore: true,
-      },
-      // Bottom-left edge anchor
-      {
-        x: this.width * (0.08 + Math.cos(t * 0.8 + 5.0) * 0.04),
-        y: this.height * (0.88 + Math.sin(t * 0.6 + 5.2) * 0.04),
-        rx: 80 * swell, ry: 75 * swell,
-        power: 0.95 * (0.8 + pulseStrength * 0.4),
+        x: this.width * (0.52 + 0.20 * Math.sin(t * 0.58 + 5.2)),
+        y: this.height * (0.88 + 0.08 * Math.cos(t * 0.68 + 4.2)),
+        rx: (60 + 12 * Math.sin(t * 0.75)) * swell,
+        ry: (54 + 10 * Math.cos(t * 0.75)) * swell,
+        angle: t * 0.22,
+        power: 0.98 * (0.85 + pulseStrength * 0.35),
+        phase: 2.8,
         hasCore: false,
       },
     ];
@@ -631,24 +662,25 @@ export class AsciiPixelEngine {
     // 1. Monochromatic Volumetric Core Underglow (pulsing bloom)
     for (const b of blobs) {
       if (!b.hasCore) continue;
-      const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.rx * 0.95);
-      const glowIntensity = 0.15 + pulseStrength * 0.35;
+      const gradRadius = Math.max(b.rx, b.ry) * 0.90;
+      const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, gradRadius);
+      const glowIntensity = 0.14 + pulseStrength * 0.30;
       if (isWhite) {
         grad.addColorStop(0, `rgba(0, 0, 0, ${glowIntensity * 0.4})`);
         grad.addColorStop(0.4, `rgba(0, 0, 0, ${glowIntensity * 0.15})`);
         grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
       } else {
         grad.addColorStop(0, `rgba(255, 255, 255, ${glowIntensity})`);
-        grad.addColorStop(0.4, `rgba(255, 255, 255, ${glowIntensity * 0.4})`);
+        grad.addColorStop(0.4, `rgba(255, 255, 255, ${glowIntensity * 0.35})`);
         grad.addColorStop(1, 'rgba(10, 10, 12, 0)');
       }
       ctx.fillStyle = grad;
       ctx.beginPath();
-      ctx.arc(b.x, b.y, b.rx * 0.95, 0, Math.PI * 2);
+      ctx.arc(b.x, b.y, gradRadius, 0, Math.PI * 2);
       ctx.fill();
     }
 
-    // 2. 2D Halftone Dot Grid Sampling with Decibel Pulsing & Acoustic Ripples
+    // 2. 2D Halftone Dot Grid Sampling with Rotated Elliptical Local Frames & Amoebic Waves
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const cx = c * cellW + cellW / 2;
@@ -656,23 +688,34 @@ export class AsciiPixelEngine {
         const nx = c / COLS;
         const ny = r / ROWS;
 
-        // Fluid wave noise & eddy currents
+        // Fluid wave noise & eddy currents that dynamically swirl
         const turbulence =
-          Math.sin(nx * 4.8 + ny * 4.2 + t * 1.1) * 0.12 +
-          Math.cos(nx * 6.5 - ny * 5.8 - t * 0.9) * 0.09 +
-          Math.sin((nx + ny) * 7.0 + t * 1.5) * 0.05;
+          Math.sin(nx * 4.5 + ny * 4.0 + t * 1.2) * 0.11 +
+          Math.cos(nx * 6.0 - ny * 5.5 - t * 1.0) * 0.08 +
+          Math.sin((nx + ny) * 6.5 + t * 1.6) * 0.05;
 
         // Acoustic voice shockwave ripples radiating through fluid
-        const centerDist = Math.hypot(nx - 0.45, ny - 0.45);
-        const acousticRipples = Math.sin(centerDist * 18.0 - t * 14.0) * (pulseStrength * 0.18);
+        const centerDist = Math.hypot(nx - 0.50, ny - 0.45);
+        const acousticRipples = Math.sin(centerDist * 16.0 - t * 12.0) * (pulseStrength * 0.16);
 
-        // Sum metaball potentials
+        // Sum metaball potentials in local rotated frames with amoebic boundary waves
         let potential = 0;
         for (const b of blobs) {
-          const dx = (cx - b.x) / b.rx;
-          const dy = (cy - b.y) / b.ry;
-          const distSq = dx * dx + dy * dy;
-          if (distSq < 2.2) {
+          const dx = cx - b.x;
+          const dy = cy - b.y;
+
+          const cosA = Math.cos(b.angle);
+          const sinA = Math.sin(b.angle);
+          const localX = (dx * cosA + dy * sinA) / b.rx;
+          const localY = (-dx * sinA + dy * cosA) / b.ry;
+
+          // Multi-harmonic amoebic boundary wave (3-lobe and 5-lobe undulating surface ripples)
+          const angle = Math.atan2(localY, localX);
+          const borderRipple = 1.0 + 0.13 * Math.sin(angle * 3.0 + t * 2.0 + b.phase)
+                                   + 0.08 * Math.cos(angle * 5.0 - t * 1.7 + b.phase * 1.4);
+
+          const distSq = (localX * localX + localY * localY) / (borderRipple * borderRipple);
+          if (distSq < 2.3) {
             potential += b.power * Math.exp(-distSq * 1.75);
           }
         }
