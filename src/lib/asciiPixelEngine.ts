@@ -48,11 +48,21 @@ export interface MemoChar {
   tEnd: number;   // in seconds
   charX: number;  // pixel X coordinate on canvas
   charY: number;  // pixel Y coordinate on canvas
-  seedX?: number;
-  seedY?: number;
+  startX?: number;
+  startY?: number;
+  baseRadius?: number;
   scatterX?: number;
   scatterY?: number;
   stagger?: number;
+}
+
+export interface AmbientTransitionPixel {
+  startX: number;
+  startY: number;
+  scatterX: number;
+  scatterY: number;
+  radius: number;
+  stagger: number;
 }
 
 export interface MemoLineDef {
@@ -176,6 +186,7 @@ export class AsciiPixelEngine {
   public prevState: AppState = 'IDLE';
   public isTransformingToStop: boolean = false;
   public stopTransformProgress: number = 0;
+  public ambientTransitionPixels: AmbientTransitionPixel[] = [];
 
   public isEjecting: boolean = false;
   public ejectVelocity: number = 0;
@@ -263,38 +274,139 @@ export class AsciiPixelEngine {
   }
 
   /**
-   * Triggers the dispersion and typographic transformation
-   * when transitioning from RECORDING fluid mode to TRANSCRIBED stop mode.
+   * Captures the active record mode halftone dots visible on screen at this instant.
+   */
+  public sampleCurrentRecordingDots(): { x: number; y: number; r: number; dirX: number; dirY: number }[] {
+    const dots: { x: number; y: number; r: number; dirX: number; dirY: number }[] = [];
+    const t = this.fluidFlowPhase;
+    const clampedEnergy = Math.max(0.001, Math.min(1.0, this.currentAudioEnergy));
+    const dbfs = 20 * Math.log10(clampedEnergy);
+    const pulseStrength = Math.max(0, Math.min(1.0, (dbfs + 42) / 38));
+    const swell = 0.76 + pulseStrength * 0.62;
+
+    const blobs = [
+      { x: this.width * (0.38 + 0.22 * Math.sin(t * 0.45) + 0.08 * Math.cos(t * 0.90)), y: this.height * (0.24 + 0.12 * Math.cos(t * 0.38) + 0.05 * Math.sin(t * 0.85)), r: (82 + 10 * Math.sin(t * 0.60)) * swell, power: 1.15 },
+      { x: this.width * (0.58 + 0.22 * Math.cos(t * 0.36 + 1.6) + 0.07 * Math.sin(t * 0.92)), y: this.height * (0.64 + 0.14 * Math.sin(t * 0.42 + 0.9) + 0.05 * Math.cos(t * 0.78)), r: (84 + 10 * Math.cos(t * 0.48 + 2.1)) * swell, power: 1.12 },
+      { x: this.width * (0.48 + 0.32 * Math.sin(t * 0.72 + 2.5)), y: this.height * (0.44 + 0.30 * Math.cos(t * 0.65 + 1.8)), r: (36 + 6 * Math.sin(t * 0.85)) * swell, power: 1.05 },
+      { x: this.width * (0.22 + 0.15 * Math.cos(t * 0.80 + 3.8)), y: this.height * (0.52 + 0.20 * Math.sin(t * 0.60 + 2.4)), r: (30 + 5 * Math.cos(t * 1.05)) * swell, power: 1.02 },
+      { x: this.width * (0.88 + 0.08 * Math.sin(t * 0.48 + 1.0)), y: this.height * (0.16 + 0.12 * Math.cos(t * 0.58 + 3.2)), r: (72 + 10 * Math.sin(t * 0.68)) * swell, power: 1.05 },
+      { x: this.width * (0.14 + 0.09 * Math.cos(t * 0.52 + 4.6)), y: this.height * (0.84 + 0.08 * Math.sin(t * 0.44 + 1.4)), r: (75 + 10 * Math.cos(t * 0.56)) * swell, power: 1.06 },
+      { x: this.width * (0.52 + 0.18 * Math.sin(t * 0.58 + 5.2)), y: this.height * (0.88 + 0.07 * Math.cos(t * 0.68 + 4.2)), r: (56 + 8 * Math.sin(t * 0.75)) * swell, power: 0.98 },
+    ];
+
+    const COLS = 50;
+    const ROWS = 72;
+    const cellW = this.width / COLS;
+    const cellH = this.height / ROWS;
+
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const cx = c * cellW + cellW / 2;
+        const cy = r * cellH + cellH / 2;
+        const nx = c / COLS;
+        const ny = r / ROWS;
+
+        const turbulence =
+          Math.sin(nx * 4.2 + ny * 3.8 + t * 1.1) * 0.09 +
+          Math.cos(nx * 5.5 - ny * 5.0 - t * 0.9) * 0.07;
+
+        let potential = 0;
+        let closestBlob = blobs[0];
+        let closestDistSq = Infinity;
+
+        for (const b of blobs) {
+          const dx = cx - b.x;
+          const dy = cy - b.y;
+          const distSq = (dx * dx + dy * dy) / (b.r * b.r);
+          if (distSq < closestDistSq) {
+            closestDistSq = distSq;
+            closestBlob = b;
+          }
+          if (distSq < 2.2) {
+            potential += b.power * Math.exp(-distSq * 1.80);
+          }
+        }
+
+        const rawField = potential + turbulence;
+        const threshold = 0.35 - pulseStrength * 0.08;
+        if (rawField >= threshold) {
+          const normField = Math.min(1.0, (rawField - threshold) / (0.85 + pulseStrength * 0.25));
+          const maxRadius = Math.min(cellW, cellH) * (0.38 + pulseStrength * 0.12);
+          const dotRadius = Math.max(0.65, normField * maxRadius);
+
+          const dirX = (cx - closestBlob.x) / Math.max(1, closestBlob.r);
+          const dirY = (cy - closestBlob.y) / Math.max(1, closestBlob.r);
+
+          dots.push({
+            x: cx,
+            y: cy,
+            r: dotRadius,
+            dirX: Math.abs(dirX) < 0.01 ? (Math.random() - 0.5) : dirX,
+            dirY: Math.abs(dirY) < 0.01 ? (Math.random() - 0.5) : dirY,
+          });
+        }
+      }
+    }
+    return dots;
+  }
+
+  /**
+   * Triggers seamless pixel dispersion of record mode elements
+   * and smooth flocking transformation into the words of stop mode.
    */
   public triggerStopTransition() {
     this.isTransformingToStop = true;
     this.stopTransformProgress = 0.0;
     this.readingProgressSec = 0.0;
+    this.ambientTransitionPixels = [];
 
-    // Snapshot active rounded fluid blob centers as departure points
-    const t = this.fluidFlowPhase;
-    const blobCenters = [
-      { x: this.width * (0.38 + 0.22 * Math.sin(t * 0.45) + 0.08 * Math.cos(t * 0.90)), y: this.height * (0.24 + 0.12 * Math.cos(t * 0.38)) },
-      { x: this.width * (0.58 + 0.22 * Math.cos(t * 0.36 + 1.6)), y: this.height * (0.64 + 0.14 * Math.sin(t * 0.42 + 0.9)) },
-      { x: this.width * (0.48 + 0.32 * Math.sin(t * 0.72 + 2.5)), y: this.height * (0.44 + 0.30 * Math.cos(t * 0.65 + 1.8)) },
-      { x: this.width * (0.22 + 0.15 * Math.cos(t * 0.80 + 3.8)), y: this.height * (0.52 + 0.20 * Math.sin(t * 0.60 + 2.4)) },
-      { x: this.width * (0.88 + 0.08 * Math.sin(t * 0.48 + 1.0)), y: this.height * (0.16 + 0.12 * Math.cos(t * 0.58 + 3.2)) },
-    ];
+    // Capture exact record mode dots active on the screen right now
+    const liveDots = this.sampleCurrentRecordingDots();
+    // Sort dots spatially (primarily top-to-bottom) so paragraph lines assemble coherently
+    const sortedDots = [...liveDots].sort((a, b) => (a.y * 1.4 + a.x * 0.3) - (b.y * 1.4 + b.x * 0.3));
 
+    const nonSpaceChars = this.memoChars.filter(c => c.char !== ' ');
+    const totalTargets = nonSpaceChars.length;
+
+    let targetIdx = 0;
     for (let i = 0; i < this.memoChars.length; i++) {
       const c = this.memoChars[i];
-      const blob = blobCenters[i % blobCenters.length];
-      const seedAngle = (i * 1.37) % (Math.PI * 2);
-      const seedDist = 12 + (i * 7) % 36;
-      c.seedX = blob.x + Math.cos(seedAngle) * seedDist;
-      c.seedY = blob.y + Math.sin(seedAngle) * seedDist;
+      if (c.char === ' ') continue;
 
-      // Disperse outward with explosion momentum
-      const scatterAngle = (i * 2.399) % (Math.PI * 2);
-      const scatterDist = 45 + (i * 19) % 110;
-      c.scatterX = c.seedX + Math.cos(scatterAngle) * scatterDist;
-      c.scatterY = c.seedY + Math.sin(scatterAngle) * scatterDist;
-      c.stagger = (i % 20) * 0.012;
+      const dot = sortedDots[targetIdx % Math.max(1, sortedDots.length)] || {
+        x: this.width * (0.3 + Math.random() * 0.4),
+        y: this.height * (0.3 + Math.random() * 0.4),
+        r: 2.4,
+        dirX: (Math.random() - 0.5) * 1.5,
+        dirY: (Math.random() - 0.5) * 1.5,
+      };
+      targetIdx++;
+
+      c.startX = dot.x;
+      c.startY = dot.y;
+      c.baseRadius = dot.r;
+
+      // Disperse outward first away from blob core before converging
+      const scatterDist = 32 + (i * 13) % 48;
+      const angle = Math.atan2(dot.dirY, dot.dirX) + ((i % 5) - 2) * 0.22;
+      c.scatterX = dot.x + Math.cos(angle) * scatterDist;
+      c.scatterY = dot.y + Math.sin(angle) * scatterDist;
+      c.stagger = (i % 24) * 0.005;
+    }
+
+    // Remaining halftone dots become ambient stardust pixels that disperse and fade
+    for (let i = totalTargets; i < sortedDots.length; i++) {
+      const dot = sortedDots[i];
+      const scatterDist = 28 + (i * 11) % 44;
+      const angle = Math.atan2(dot.dirY, dot.dirX) + (Math.random() - 0.5) * 0.5;
+      this.ambientTransitionPixels.push({
+        startX: dot.x,
+        startY: dot.y,
+        scatterX: dot.x + Math.cos(angle) * scatterDist,
+        scatterY: dot.y + Math.sin(angle) * scatterDist,
+        radius: dot.r,
+        stagger: (i % 28) * 0.005,
+      });
     }
   }
 
@@ -366,8 +478,8 @@ export class AsciiPixelEngine {
 
     // Transformation from Recording to Stop mode or continuous karaoke reading
     if (this.isTransformingToStop) {
-      // 1.1s cinematic dispersion and typographic transformation
-      this.stopTransformProgress += dt / 1.1;
+      // 1.35s cinematic pixel dispersion and seamless typographic transformation
+      this.stopTransformProgress += dt / 1.35;
       if (this.stopTransformProgress >= 1.0) {
         this.stopTransformProgress = 1.0;
         this.isTransformingToStop = false;
@@ -860,15 +972,26 @@ export class AsciiPixelEngine {
       const isTransforming = this.isTransformingToStop;
       const headerAlpha = isTransforming ? Math.max(0, (progress - 0.65) / 0.35) : 1.0;
 
-      // 1. Residual halftone dots dissolving in Phase 1
-      if (isTransforming && progress < 0.38) {
-        const dissolve = 1.0 - progress / 0.38;
+      // 1. Ambient stardust pixels (record mode halftone dots dispersing outward & fading)
+      if (isTransforming && this.ambientTransitionPixels.length > 0) {
         ctx.fillStyle = isWhite ? '#71717A' : '#FFFFFF';
-        ctx.globalAlpha = dissolve * 0.30;
-        for (let i = 0; i < 60; i++) {
-          const gx = (i * 37) % this.width;
-          const gy = (i * 59) % this.height;
-          ctx.fillRect(gx, gy, 2, 2);
+        for (let i = 0; i < this.ambientTransitionPixels.length; i++) {
+          const ap = this.ambientTransitionPixels[i];
+          const apStagger = ap.stagger || 0;
+          const effAP = Math.max(0, Math.min(1.0, (progress - apStagger) / (0.55 - apStagger)));
+          if (effAP >= 1.0) continue;
+
+          const easeAP = 1 - Math.pow(1 - effAP, 2.2);
+          const curX = ap.startX + (ap.scatterX - ap.startX) * easeAP;
+          const curY = ap.startY + (ap.scatterY - ap.startY) * easeAP;
+          const alpha = (1.0 - effAP) * (isWhite ? 0.38 : 0.65);
+          const size = Math.max(1.2, ap.radius * 1.8 * (1.0 - effAP * 0.38));
+
+          ctx.globalAlpha = alpha;
+          ctx.beginPath();
+          const corner = size * 0.34;
+          ctx.roundRect(curX - size / 2, curY - size / 2, size, size, corner);
+          ctx.fill();
         }
       }
 
@@ -906,15 +1029,15 @@ export class AsciiPixelEngine {
         ctx.stroke();
       }
 
-      // 3. Characters Rendering: Transformation vs Continuous Reading
+      // 3. Characters Rendering: Pure Pixel Dispersion & Typographic Morphing vs Karaoke
       ctx.font = '600 19px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
 
       if (isTransforming) {
-        // DISPERSE & TRANSFORM KINETIC CHOREOGRAPHY
-        const ASCII_SCRAMBLE = ['·', '+', '■', '░', '*', '▒', '▪', '#'];
-
+        // PURE HARDWARE PIXELS:
+        // Record mode elements disperse outward first as pure glowing pixels (no ASCII characters),
+        // flock along smooth organic streamlines, and seamlessly cross-fade into words at destination.
         for (let i = 0; i < this.memoChars.length; i++) {
           const mc = this.memoChars[i];
           if (mc.char === ' ') continue;
@@ -922,42 +1045,65 @@ export class AsciiPixelEngine {
           const stagger = mc.stagger || 0;
           const effP = Math.max(0, Math.min(1.0, (progress - stagger) / (1.0 - stagger)));
 
-          let curX: number, curY: number, alpha: number, displayChar: string;
+          const startX = mc.startX ?? (this.width / 2);
+          const startY = mc.startY ?? (this.height / 2);
+          const scatterX = mc.scatterX ?? mc.charX;
+          const scatterY = mc.scatterY ?? mc.charY;
+          const baseR = mc.baseRadius ?? 2.4;
 
-          if (effP < 0.32) {
-            // Phase 1: Disperse outward from seed blob to scatter
-            const p1 = effP / 0.32;
-            const ease1 = 1 - Math.pow(1 - p1, 2);
-            const seedX = mc.seedX ?? (this.width / 2);
-            const seedY = mc.seedY ?? (this.height / 2);
-            const scatterX = mc.scatterX ?? mc.charX;
-            const scatterY = mc.scatterY ?? mc.charY;
-            curX = seedX + (scatterX - seedX) * ease1;
-            curY = seedY + (scatterY - seedY) * ease1;
-            alpha = 0.5 + p1 * 0.5;
-            displayChar = ASCII_SCRAMBLE[(i + Math.floor(progress * 28)) % ASCII_SCRAMBLE.length];
+          let curX: number, curY: number;
+          let pixelAlpha = 1.0;
+          let glyphAlpha = 0.0;
+          let pixelSize = Math.max(2.2, baseR * 1.85);
+
+          if (effP < 0.36) {
+            // Phase 1: Pure outward dispersion of record mode elements
+            const p1 = effP / 0.36;
+            const ease1 = 1 - Math.pow(1 - p1, 2.2);
+            curX = startX + (scatterX - startX) * ease1;
+            curY = startY + (scatterY - startY) * ease1;
+            pixelAlpha = 0.88 + 0.12 * Math.sin(p1 * Math.PI);
+            pixelSize = Math.max(2.0, baseR * 1.85 * (1.0 - p1 * 0.18));
+            glyphAlpha = 0.0;
           } else {
-            // Phase 2: Converge and transform into word position
-            const p2 = (effP - 0.32) / 0.68;
+            // Phase 2: Magnetic flocking & streamline convergence to word coordinates
+            const p2 = Math.min(1.0, (effP - 0.36) / 0.64);
             const ease2 = 1 - Math.pow(1 - p2, 3);
-            const scatterX = mc.scatterX ?? mc.charX;
-            const scatterY = mc.scatterY ?? mc.charY;
-            curX = scatterX + (mc.charX - scatterX) * ease2;
-            curY = scatterY + (mc.charY - scatterY) * ease2;
-            alpha = 0.75 + p2 * 0.25;
+            const streamlineCurve = Math.sin(p2 * Math.PI) * 9 * Math.sin(i * 1.35);
 
-            if (p2 > 0.65) {
-              displayChar = mc.char;
+            curX = scatterX + (mc.charX - scatterX) * ease2 + streamlineCurve * 0.3;
+            curY = scatterY + (mc.charY - scatterY) * ease2 + streamlineCurve;
+
+            if (p2 < 0.60) {
+              // Pure glowing pixel in flight
+              pixelAlpha = 0.90 + 0.10 * p2;
+              pixelSize = Math.max(1.8, baseR * 1.5 * (1.0 - p2 * 0.32));
+              glyphAlpha = 0.0;
             } else {
-              displayChar = (p2 > 0.38 && (i % 2 === 0))
-                ? mc.char
-                : ASCII_SCRAMBLE[(i + Math.floor(progress * 18)) % ASCII_SCRAMBLE.length];
+              // Seamless morph: pixel core dissolves while typographic letter solidifies
+              const morphT = (p2 - 0.60) / 0.40;
+              pixelAlpha = Math.max(0, 1.0 - morphT * 1.35);
+              glyphAlpha = Math.min(1.0, morphT * 1.25);
+              pixelSize = Math.max(1.2, baseR * (1.0 - morphT));
             }
           }
 
-          ctx.fillStyle = isWhite ? '#000000' : (progress > 0.85 ? '#E4E4E7' : '#FFFFFF');
-          ctx.globalAlpha = alpha;
-          ctx.fillText(displayChar, curX, curY);
+          // 1. Render glowing hardware pixel (zero ASCII glyphs)
+          if (pixelAlpha > 0.01) {
+            ctx.fillStyle = isWhite ? '#18181B' : '#FFFFFF';
+            ctx.globalAlpha = pixelAlpha;
+            ctx.beginPath();
+            const corner = pixelSize * 0.34;
+            ctx.roundRect(curX - pixelSize / 2, curY - pixelSize / 2, pixelSize, pixelSize, corner);
+            ctx.fill();
+          }
+
+          // 2. Render solidified typographic letter as it locks into position
+          if (glyphAlpha > 0.01) {
+            ctx.fillStyle = isWhite ? '#18181B' : (progress > 0.88 ? '#E4E4E7' : '#FFFFFF');
+            ctx.globalAlpha = glyphAlpha;
+            ctx.fillText(mc.char, curX, curY);
+          }
         }
       } else {
         // NORMAL LETTER-BY-LETTER KARAOKE READING
