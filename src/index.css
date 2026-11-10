@@ -2,96 +2,80 @@
 
 @layer base {
   :root {
-    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", 'Inter', "Segoe UI", Roboto, sans-serif;
+    --font-pixel: 'Silkscreen', 'JetBrains Mono', monospace;
+    --font-mono: 'JetBrains Mono', monospace;
   }
 
   body {
-    font-family: var(--font-sans);
+    font-family: var(--font-pixel);
     margin: 0;
     padding: 0;
     overflow-x: hidden;
-    background-color: #F5F5F7;
-    color: #1D1D1F;
+    background-color: #070709;
+    color: #E4E4E7;
     -webkit-font-smoothing: antialiased;
   }
+}
+
+.font-pixel {
+  font-family: var(--font-pixel);
 }
 
 .font-mono {
   font-family: var(--font-mono);
 }
 
-.font-sans {
-  font-family: var(--font-sans);
-}
-
 /* =========================================================================
-   APPLE HIG PURE WHITE DESIGN SYSTEM (ZERO GRADIENTS)
-   Solid Surfaces, Crisp Hairline Borders, Black ASCII Particles
+   1-BIT INDUSTRIAL TACTICAL PIXEL TERMINAL SYSTEM
+   Deactivated CRT Obsidian, Monospace Pixel Typography, Bracketed Primitives
    ========================================================================= */
 
-/* Apple White Frame Chassis */
-.apple-frame-white {
-  background-color: #FFFFFF;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 20px 48px -12px rgba(0, 0, 0, 0.08), 0 1px 3px rgba(0, 0, 0, 0.04);
+/* Mobile Frame Chassis */
+.terminal-chassis {
+  background-color: #0D0D10;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.95), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
 }
 
-/* White Card Surface */
-.white-card {
-  background-color: #FFFFFF;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+/* Recessed Display Screen Well */
+.terminal-screen-well {
+  background-color: #050507;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Pure White Canvas Well */
-.white-canvas-well {
-  background-color: #FFFFFF;
-  border: 1px solid rgba(0, 0, 0, 0.06);
+/* Tactical Control Deck */
+.terminal-control-deck {
+  background-color: #0F0F13;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Apple Solid Control Deck */
-.white-control-deck {
+/* Tactical Corner Bracket Button Box (Idle / Unchecked) */
+.pixel-box-idle {
+  background-color: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: #A1A1AA;
+}
+
+.pixel-box-idle:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.3);
+  color: #FFFFFF;
+}
+
+/* Tactical Solid Silver Active Block (from screenshot [✓]) */
+.pixel-box-active {
+  background-color: #D4D4D8;
+  border: 1px solid #E4E4E7;
+  color: #09090B;
+}
+
+/* Hairline Track for Mode Slider */
+.slider-track {
+  background-color: rgba(255, 255, 255, 0.12);
+  height: 1px;
+}
+
+.slider-thumb {
   background-color: #FAFAFA;
-  border: 1px solid rgba(0, 0, 0, 0.06);
-}
-
-/* Apple HIG Solid Button Surfaces (Zero Gradients) */
-.apple-key-idle-white {
-  background-color: #FFFFFF;
-  border: 1px solid rgba(0, 0, 0, 0.09);
-  color: #1D1D1F;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
-}
-
-.apple-key-idle-white:hover {
-  background-color: #F5F5F7;
-  border-color: rgba(0, 0, 0, 0.15);
-}
-
-/* Dark Mode Fallback Surfaces */
-.apple-frame-dark {
-  background-color: #000000;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8);
-}
-
-.obsidian-card {
-  background-color: #0C0C10;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.obsidian-canvas-well {
-  background-color: #08080A;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.apple-key-idle-dark {
-  background-color: #141418;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  color: #E4E4E7;
-}
-
-.apple-key-idle-dark:hover {
-  background-color: #1B1B22;
-  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
 }

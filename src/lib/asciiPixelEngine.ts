@@ -53,7 +53,7 @@ export class AsciiPixelEngine {
   public originY: number = 0;
 
   public state: AppState = 'IDLE';
-  public theme: ThemeMode = 'WHITE';
+  public theme: ThemeMode = 'DARK';
   public tapeName: string = 'NOTE_01';
   public spokeAngle: number = 0;
   public playheadCol: number = 0;

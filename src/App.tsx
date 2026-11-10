@@ -5,13 +5,13 @@ import { AsciiPixelEngine, AppState, ThemeMode } from './lib/asciiPixelEngine';
 import { audioSynth } from './lib/audioSynth';
 
 export function App() {
-  const [theme, setTheme] = useState<ThemeMode>('WHITE');
-  const [state, setState] = useState<AppState>('IDLE');
+  const [theme, setTheme] = useState<ThemeMode>('DARK');
+  const [state, setState] = useState<AppState>('TRANSCRIBED');
   const [tapeName, setTapeName] = useState<string>('NOTE_01');
   const [isZoomed, setIsZoomed] = useState<boolean>(false);
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
   const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [elapsedMs, setElapsedMs] = useState<number>(0);
+  const [elapsedMs, setElapsedMs] = useState<number>(14820); // 00:14.82 default
   const [audioBands, setAudioBands] = useState<number[]>([0.1, 0.2, 0.4, 0.6, 0.5, 0.3, 0.2, 0.1]);
   const [audioEnergy, setAudioEnergy] = useState<number>(0.08);
 
@@ -135,20 +135,28 @@ export function App() {
     setIsMuted(muted);
   };
 
-  const isWhite = theme === 'WHITE';
-
   return (
-    <div
-      className={`min-h-screen w-full flex flex-col items-center justify-center p-4 sm:p-8 transition-colors duration-300 font-sans select-none ${
-        isWhite ? 'bg-[#F5F5F7] text-[#1D1D1F]' : 'bg-[#050507] text-[#FAFAFA]'
-      }`}
-    >
-      {/* Studio Workbench Header & Telemetry Pill */}
-      <div className="w-full max-w-[390px] mb-3 flex items-center justify-between text-[11px] font-mono tracking-wider">
+    <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 sm:p-6 bg-[#070709] text-[#E4E4E7] font-pixel select-none relative">
+      {/* Background Registration Crosshairs */}
+      <div className="pointer-events-none fixed top-4 left-4 text-[9px] text-white/20 select-none">
+        +
+      </div>
+      <div className="pointer-events-none fixed top-4 right-4 text-[9px] text-white/20 select-none">
+        +
+      </div>
+      <div className="pointer-events-none fixed bottom-4 left-4 text-[9px] text-white/20 select-none">
+        +
+      </div>
+      <div className="pointer-events-none fixed bottom-4 right-4 text-[9px] text-white/20 select-none">
+        +
+      </div>
+
+      {/* Top Telemetry & Control Bar */}
+      <div className="w-full max-w-[390px] mb-2.5 flex items-center justify-between text-[10px] text-zinc-400 tracking-wider">
         <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-xs ${isWhite ? 'bg-black' : 'bg-emerald-400'}`} />
-          <span className="font-semibold text-zinc-600 dark:text-zinc-400">
-            ASCII_PIXEL // 60×80
+          <span className="w-1.5 h-1.5 bg-white rounded-none shadow-[0_0_6px_rgba(255,255,255,0.8)]" />
+          <span className="font-bold text-zinc-300">
+            TERMINAL // 60×80
           </span>
         </div>
 
@@ -156,12 +164,10 @@ export function App() {
         <div className="flex items-center gap-1.5">
           <button
             onClick={handleMicToggle}
-            className={`px-2.5 py-1 rounded-full text-[10px] font-mono tracking-wider font-semibold border transition-all cursor-pointer ${
+            className={`px-2 py-0.5 rounded-none text-[9px] font-pixel border transition-all cursor-pointer ${
               isMicActive
-                ? 'bg-red-500/15 border-red-500/60 text-red-600'
-                : isWhite
-                ? 'bg-white border-black/8 text-zinc-600 hover:text-black shadow-xs'
-                : 'bg-white/5 border-white/8 text-zinc-400 hover:text-zinc-200'
+                ? 'bg-red-500/20 border-red-500 text-red-400'
+                : 'bg-white/5 border-white/15 text-zinc-400 hover:text-white'
             }`}
           >
             {isMicActive ? 'MIC: LIVE' : 'MIC: SIM'}
@@ -169,46 +175,31 @@ export function App() {
 
           <button
             onClick={handleMuteToggle}
-            className={`px-2 py-1 rounded-full text-[10px] font-mono tracking-wider font-semibold border transition-all cursor-pointer ${
+            className={`px-2 py-0.5 rounded-none text-[9px] font-pixel border transition-all cursor-pointer ${
               isMuted
-                ? 'bg-zinc-200/50 border-black/5 text-zinc-400'
-                : isWhite
-                ? 'bg-white border-black/8 text-zinc-800 hover:text-black shadow-xs'
-                : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+                ? 'bg-white/5 border-white/10 text-zinc-600'
+                : 'bg-white/10 border-white/20 text-white'
             }`}
             title="Toggle Web Audio Foley Clicks"
           >
             {isMuted ? 'FOLEY: OFF' : 'FOLEY: ON'}
           </button>
 
-          {/* White vs Dark Theme Toggle */}
           <button
             onClick={() => setTheme((t) => (t === 'WHITE' ? 'DARK' : 'WHITE'))}
-            className={`px-2.5 py-1 rounded-full text-[10px] font-mono tracking-widest font-semibold border transition-all cursor-pointer ${
-              isWhite
-                ? 'bg-white border-black/8 text-zinc-800 hover:bg-zinc-100 shadow-xs'
-                : 'bg-white/5 border-white/8 text-zinc-300 hover:bg-white/10'
-            }`}
+            className="px-2 py-0.5 rounded-none text-[9px] font-pixel border border-white/15 bg-white/5 text-zinc-400 hover:text-white transition-all cursor-pointer"
           >
-            {isWhite ? 'WHITE' : 'DARK'}
+            {theme}
           </button>
         </div>
       </div>
 
-      {/* 390x844 MOBILE HARDWARE FRAME (Solid Matte Apple Chassis) */}
-      <div
-        className={`relative w-[390px] h-[844px] rounded-[48px] p-3 flex flex-col justify-between overflow-hidden transition-all duration-300 ${
-          isWhite ? 'apple-frame-white' : 'apple-frame-dark'
-        }`}
-      >
-        {/* TOP 2/3 (HEIGHT: 556PX): RECESSED ASCII PIXEL CANVAS (366x532px) */}
-        <div
-          className={`w-full h-[556px] rounded-[28px] p-3 flex flex-col justify-between transition-colors duration-200 ${
-            isWhite ? 'white-card' : 'obsidian-card'
-          }`}
-        >
-          {/* Inner Recessed 366x532px Canvas */}
-          <div className="w-[366px] h-[532px] mx-auto overflow-hidden rounded-[16px]">
+      {/* 390x844 MOBILE CHASSIS (1-Bit Industrial Pixel Hardware Frame) */}
+      <div className="relative w-[390px] h-[844px] rounded-[36px] p-3 flex flex-col justify-between overflow-hidden terminal-chassis">
+        {/* TOP 2/3 (HEIGHT: 530PX): RECESSED ASCII PIXEL DISPLAY WELL */}
+        <div className="w-full h-[526px] rounded-[20px] p-2 flex flex-col justify-between terminal-screen-well relative">
+          {/* Inner Recessed 366x510px Canvas */}
+          <div className="w-[366px] h-[510px] mx-auto overflow-hidden rounded-[14px]">
             <AsciiCanvas
               engine={engine}
               state={state}
@@ -220,7 +211,7 @@ export function App() {
           </div>
         </div>
 
-        {/* BOTTOM 1/3 (HEIGHT: 264PX): THE TACTILE CONTROL PANEL */}
+        {/* BOTTOM 1/3 (HEIGHT: 286PX): TACTICAL 1-BIT TASK & TRANSPORT DOCK */}
         <TactileControls
           state={state}
           theme={theme}
@@ -235,11 +226,11 @@ export function App() {
       </div>
 
       {/* Screen-Recording Quick Jump HUD */}
-      <div className="w-full max-w-[390px] mt-3 flex items-center justify-between text-[11px] font-mono text-zinc-500 tracking-wider">
+      <div className="w-full max-w-[390px] mt-2.5 flex items-center justify-between text-[10px] text-zinc-500 tracking-wider">
         <span>KEYS: 1:IDLE 2:REC 3:STOP 4:PLAY 5:SAVE</span>
         <button
           onClick={() => setIsZoomed((z) => !z)}
-          className="hover:text-black dark:hover:text-white cursor-pointer transition-colors"
+          className="hover:text-white cursor-pointer transition-colors"
         >
           Z:ZOOM {isZoomed ? '[1.5×]' : '[1.0×]'}
         </button>
