@@ -196,21 +196,45 @@ class AudioFoleyEngine {
       return { energy: Math.min(1, avg * 2.2), bands };
     }
 
-    // 2. Procedural Simplex/Harmonic Fallback (Clean screen recording without talking)
+    // 2. Procedural Speech Emulation (Realistic conversational vocal cadence & decibels)
     if (simulateVocalCadence) {
-      // Simulate speech phrases (bursts of vocal energy separated by breath pauses)
-      const phraseCycle = (Math.sin(timeSec * 1.8) + Math.cos(timeSec * 3.4)) * 0.5 + 0.5;
-      const breathPause = Math.sin(timeSec * 0.7) > -0.2 ? 1 : 0.08;
-      const highFlutter = Math.sin(timeSec * 9.5) * 0.15;
-      const vocalSpike = Math.max(0, phraseCycle * breathPause + highFlutter);
+      // Sentence loop: 3.8s total cycle (2.9s spoken speech + 0.9s breath pause)
+      const sentencePeriod = 3.8;
+      const phaseInSentence = timeSec % sentencePeriod;
+      const isSpeaking = phaseInSentence < 2.9;
 
-      const bands: number[] = [];
-      for (let i = 0; i < 8; i++) {
-        const bandVal = Math.sin(timeSec * 4 + i * 1.2) * 0.5 + 0.5;
-        bands.push(Math.min(1, Math.max(0, vocalSpike * (0.4 + bandVal * 0.6))));
+      let energy = 0.012; // Quiet resting ambient mic floor (-38.4 dBFS)
+
+      if (isSpeaking) {
+        // Conversational syllabic envelope: ~3.8 syllables per second
+        const syllablePhase = (phaseInSentence * 24.0) % (Math.PI * 2);
+        const syllablePulse = Math.pow(Math.max(0, Math.sin(syllablePhase)), 1.8);
+
+        // Word stress curve (sentence rises in middle, falls at period)
+        const wordStress = 0.45 + 0.55 * Math.sin((phaseInSentence / 2.9) * Math.PI);
+
+        // Vocal tract formant micro-flutter (11-15 Hz)
+        const formantFlutter = 0.85 + 0.15 * Math.sin(timeSec * 82.0);
+
+        // Sub-syllable micro-pause (inter-word gap ~70ms)
+        const interWordGate = Math.sin(phaseInSentence * 7.5) > -0.75 ? 1.0 : 0.15;
+
+        // Peak energy ranges between 0.35 (-9 dBFS) and 0.82 (-1.7 dBFS)
+        energy = Math.min(0.95, (0.08 + syllablePulse * wordStress * 0.78 * formantFlutter) * interWordGate);
+      } else {
+        // Inhale / breath pause: subtle room mic noise floor
+        energy = 0.012 + Math.sin(timeSec * 8.0) * 0.004;
       }
 
-      return { energy: Math.min(1, vocalSpike), bands };
+      // Generate 8-band vocal formant spectrum (vowel energy concentrated in bands 1-4)
+      const bands: number[] = [];
+      const vowelFormants = [0.35, 0.85, 1.0, 0.65, 0.45, 0.30, 0.18, 0.10];
+      for (let i = 0; i < 8; i++) {
+        const bandNoise = 0.85 + 0.3 * Math.sin(timeSec * 16.0 + i * 1.7);
+        bands.push(Math.min(1.0, Math.max(0.01, energy * vowelFormants[i] * bandNoise)));
+      }
+
+      return { energy, bands };
     }
 
     // Default gentle idle hum

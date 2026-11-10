@@ -120,16 +120,16 @@ export const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
       />
 
       {/* Technical Wireframe Corner Registration Marks */}
-      <div className={`pointer-events-none absolute top-2.5 left-2.5 text-[8px] font-pixel select-none transition-colors ${state === 'RECORDING' ? 'text-blue-900/40' : 'text-zinc-600'}`}>
+      <div className={`pointer-events-none absolute top-2.5 left-2.5 text-[8px] font-pixel select-none transition-colors ${theme === 'WHITE' ? 'text-zinc-400' : 'text-zinc-700'}`}>
         + 50×72
       </div>
-      <div className={`pointer-events-none absolute top-2.5 right-2.5 text-[8px] font-pixel select-none transition-colors ${state === 'RECORDING' ? 'text-blue-900/40' : 'text-zinc-600'}`}>
+      <div className={`pointer-events-none absolute top-2.5 right-2.5 text-[8px] font-pixel select-none transition-colors ${theme === 'WHITE' ? 'text-zinc-400' : 'text-zinc-700'}`}>
         HALFTONE +
       </div>
-      <div className={`pointer-events-none absolute bottom-2.5 left-2.5 text-[8px] font-pixel select-none transition-colors ${state === 'RECORDING' ? 'text-blue-900/40' : 'text-zinc-600'}`}>
+      <div className={`pointer-events-none absolute bottom-2.5 left-2.5 text-[8px] font-pixel select-none transition-colors ${theme === 'WHITE' ? 'text-zinc-400' : 'text-zinc-700'}`}>
         + 60FPS
       </div>
-      <div className={`pointer-events-none absolute bottom-2.5 right-2.5 text-[8px] font-pixel select-none transition-colors ${state === 'RECORDING' ? 'text-blue-900/40' : 'text-zinc-600'}`}>
+      <div className={`pointer-events-none absolute bottom-2.5 right-2.5 text-[8px] font-pixel select-none transition-colors ${theme === 'WHITE' ? 'text-zinc-400' : 'text-zinc-700'}`}>
         FLUID +
       </div>
 

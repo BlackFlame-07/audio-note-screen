@@ -56,6 +56,11 @@ export function App() {
           audioSynth.playClick(1200);
           setIsZoomed((prev) => !prev);
           break;
+        case 't':
+        case 'T':
+          audioSynth.playClick(1000);
+          setTheme((prev) => (prev === 'DARK' ? 'WHITE' : 'DARK'));
+          break;
       }
     };
 
@@ -149,6 +154,17 @@ export function App() {
         {/* Global Controls */}
         <div className="flex items-center gap-1.5">
           <button
+            onClick={() => {
+              audioSynth.playClick(1000);
+              setTheme((prev) => (prev === 'DARK' ? 'WHITE' : 'DARK'));
+            }}
+            className="px-2 py-0.5 rounded-md text-[8.5px] font-pixel tracking-wider border carbon-key-idle transition-all cursor-pointer"
+            title="Toggle Monochrome Theme (Dark / White)"
+          >
+            {theme === 'DARK' ? 'THEME: DARK' : 'THEME: WHITE'}
+          </button>
+
+          <button
             onClick={handleMicToggle}
             className={`px-2 py-0.5 rounded-md text-[8.5px] font-pixel tracking-wider border transition-all cursor-pointer ${
               isMicActive
@@ -212,7 +228,7 @@ export function App() {
 
       {/* Screen-Recording Quick Jump HUD */}
       <div className="w-full max-w-[390px] mt-3 flex items-center justify-between text-[9px] font-pixel text-zinc-500 tracking-wider">
-        <span>KEYS: 1:IDLE 2:REC 3:STOP 4:PLAY 5:SAVE</span>
+        <span>KEYS: 1:IDLE 2:REC 3:STOP 4:PLAY 5:SAVE | T:THEME</span>
         <button
           onClick={() => setIsZoomed((z) => !z)}
           className="hover:text-white cursor-pointer transition-colors"
