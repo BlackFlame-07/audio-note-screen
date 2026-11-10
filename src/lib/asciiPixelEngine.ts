@@ -227,9 +227,9 @@ export class AsciiPixelEngine {
 
     // Smooth continuous reading progression in TRANSCRIBED mode (10 tokens across 5 lines)
     if (this.state === 'TRANSCRIBED') {
-      const readingSpeed = 0.88; // smooth tokens per second cadence
+      const readingSpeed = 1.55; // Natural human conversational talking speed (~165 WPM)
       this.readingProgress += dt * readingSpeed;
-      if (this.readingProgress > 11.5) {
+      if (this.readingProgress > 12.0) {
         this.readingProgress = 0;
       }
     }
