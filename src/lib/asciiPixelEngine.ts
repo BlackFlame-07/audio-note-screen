@@ -39,20 +39,57 @@ export interface PixelParticle {
   row: number;
 }
 
-export interface SpotifyLyric {
-  fullText: string;
-  prefix: string;
-  highlight: string;
-  suffix: string;
+export interface MemoToken {
+  text: string;
+  isAccent?: boolean; // Accent keyword (Alexey, 3 meetings, 2 tasks, mostly free, 4 pm)
 }
 
-export const SPOTIFY_LYRICS: SpotifyLyric[] = [
-  { fullText: "Good morning, Alexey.", prefix: "Good morning, ", highlight: "Alexey.", suffix: "" },
-  { fullText: "You have 3 meetings,", prefix: "You have ", highlight: "3 meetings,", suffix: "" },
-  { fullText: "2 tasks and 1 habit", prefix: "", highlight: "2 tasks", suffix: " and 1 habit" },
-  { fullText: "today. You're mostly free", prefix: "today. You're ", highlight: "mostly free", suffix: "" },
-  { fullText: "after 4 pm.", prefix: "after ", highlight: "4 pm.", suffix: "" },
+export interface MemoLine {
+  paragraphId: number; // 0 for greeting paragraph, 1 for main summary paragraph
+  tokens: MemoToken[];
+}
+
+export const MEMO_PARAGRAPHS: MemoLine[] = [
+  // Paragraph 1: Greeting
+  {
+    paragraphId: 0,
+    tokens: [
+      { text: "Good morning, " },
+      { text: "Alexey.", isAccent: true },
+    ],
+  },
+  // Paragraph 2: Daily Briefing Paragraph
+  {
+    paragraphId: 1,
+    tokens: [
+      { text: "You have " },
+      { text: "3 meetings,", isAccent: true },
+    ],
+  },
+  {
+    paragraphId: 1,
+    tokens: [
+      { text: "2 tasks", isAccent: true },
+      { text: " and 1 habit" },
+    ],
+  },
+  {
+    paragraphId: 1,
+    tokens: [
+      { text: "today. " },
+      { text: "You're mostly free", isAccent: true },
+    ],
+  },
+  {
+    paragraphId: 1,
+    tokens: [
+      { text: "after " },
+      { text: "4 pm.", isAccent: true },
+    ],
+  },
 ];
+
+export const LINE_Y_POSITIONS = [145, 223, 263, 303, 343];
 
 export const PARTICLE_COUNT = 4800; // 60 cols x 80 rows full-frame dot matrix
 const IDLE_GLYPHS = ['.', '·', ':', '+', '*'];
@@ -75,6 +112,8 @@ export class AsciiPixelEngine {
 
   public activeLyricIndex: number = 0;
   public manualLyricIndex: number = -1;
+  public readingProgress: number = 0;
+  private lastTimeSec: number = 0;
 
   public transitionProgress: number = 1.0;
   public prevState: AppState = 'IDLE';
@@ -148,10 +187,14 @@ export class AsciiPixelEngine {
       this.transitionProgress = 0.0;
       this.isEjecting = false;
       this.ejectVelocity = 0;
-      if (nextState !== 'TRANSCRIBED') {
-        this.manualLyricIndex = -1;
+      if (nextState === 'TRANSCRIBED') {
+        this.readingProgress = 0;
       }
     }
+  }
+
+  public seekToLine(lineIdx: number) {
+    this.readingProgress = Math.max(0, Math.min(9, lineIdx * 2));
   }
 
   public triggerEject(onComplete?: () => void) {
@@ -171,6 +214,9 @@ export class AsciiPixelEngine {
    */
   public update(timeMs: number, audioEnergy: number = 0.1) {
     const timeSec = timeMs * 0.001;
+    const dt = this.lastTimeSec > 0 ? Math.min(0.1, Math.max(0.001, timeSec - this.lastTimeSec)) : 0.016;
+    this.lastTimeSec = timeSec;
+
     const isWhite = this.theme === 'WHITE';
     const primaryColor = isWhite ? '#000000' : '#FFFFFF';
     const mutedColor = isWhite ? '#71717A' : '#72727A';
@@ -179,9 +225,13 @@ export class AsciiPixelEngine {
     this.spokeAngle += 0.08;
     this.playheadCol = (Math.sin(timeSec * 2.2) * 0.5 + 0.5) * (BITMAP_COLS - 1);
 
-    // Spotify Lyric time-synced karaoke progression (advance line every 2.7s)
-    if (this.manualLyricIndex < 0) {
-      this.activeLyricIndex = Math.floor(timeSec / 2.7) % SPOTIFY_LYRICS.length;
+    // Smooth continuous reading progression in TRANSCRIBED mode (10 tokens across 5 lines)
+    if (this.state === 'TRANSCRIBED') {
+      const readingSpeed = 0.88; // smooth tokens per second cadence
+      this.readingProgress += dt * readingSpeed;
+      if (this.readingProgress > 11.5) {
+        this.readingProgress = 0;
+      }
     }
 
     if (this.transitionProgress < 1.0) {
@@ -533,71 +583,59 @@ export class AsciiPixelEngine {
       ctx.lineTo(this.width - 20, 58);
       ctx.stroke();
 
-      // Large Spotify Lyrics Lines
-      const startY = 135;
-      const lineSpacing = 54;
-      const activeIdx = this.manualLyricIndex >= 0 ? this.manualLyricIndex : this.activeLyricIndex;
+      // Paragraph Formatted Reading UI with Silky Smooth Karaoke Progression (No Left Side Bar)
+      const startX = 24;
+      ctx.font = '600 19px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'left';
 
-      for (let idx = 0; idx < SPOTIFY_LYRICS.length; idx++) {
-        const lyric = SPOTIFY_LYRICS[idx];
-        const y = startY + idx * lineSpacing;
-        const isActive = idx === activeIdx;
-        const isNear = Math.abs(idx - activeIdx) === 1;
+      let globalTokenIdx = 0;
 
-        ctx.save();
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
+      for (let lineIdx = 0; lineIdx < MEMO_PARAGRAPHS.length; lineIdx++) {
+        const line = MEMO_PARAGRAPHS[lineIdx];
+        const lineY = LINE_Y_POSITIONS[lineIdx];
+        let curX = startX;
 
-        if (isActive) {
-          // Spotify Active Line Pill Indicator on left margin
-          ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
-          ctx.globalAlpha = 0.95;
-          ctx.fillRect(16, y - 10, 3, 20);
+        for (let tIdx = 0; tIdx < line.tokens.length; tIdx++) {
+          const token = line.tokens[tIdx];
+          const dist = this.readingProgress - globalTokenIdx;
 
-          // Large Bold Active Spotify Typography (20px)
-          const lyricFont = '700 20px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
-          ctx.font = lyricFont;
-          
-          let curX = 28;
-          // Prefix (spoken context)
-          if (lyric.prefix) {
-            ctx.fillStyle = isWhite ? '#52525B' : '#A1A1AA';
-            ctx.globalAlpha = 0.85;
+          ctx.save();
+          if (dist >= 1.0) {
+            // Spoken / already read: clear, stable chalk white
+            ctx.fillStyle = isWhite ? '#18181B' : '#E4E4E7';
+            ctx.globalAlpha = token.isAccent ? 0.95 : 0.72;
             ctx.shadowBlur = 0;
-            ctx.fillText(lyric.prefix, curX, y);
-            curX += ctx.measureText(lyric.prefix).width;
-          }
-          // Spoken Highlight (radiant pure white blooming halation)
-          if (lyric.highlight) {
+          } else if (dist >= 0.0 && dist < 1.0) {
+            // Currently being read: smooth bell ease & blooming halation
+            const u = dist; // 0.0 -> 1.0
+            const bell = Math.sin(u * Math.PI);
             ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
-            ctx.globalAlpha = 1.0;
+            ctx.globalAlpha = 0.35 + 0.65 * Math.min(1, u * 2.2);
             if (!isWhite) {
-              ctx.shadowColor = 'rgba(255, 255, 255, 0.55)';
-              ctx.shadowBlur = 14;
+              ctx.shadowColor = token.isAccent
+                ? 'rgba(255, 255, 255, 0.75)'
+                : 'rgba(255, 255, 255, 0.45)';
+              ctx.shadowBlur = Math.round(bell * 14);
             }
-            ctx.fillText(lyric.highlight, curX, y);
-            curX += ctx.measureText(lyric.highlight).width;
-          }
-          // Suffix (spoken context)
-          if (lyric.suffix) {
-            ctx.fillStyle = isWhite ? '#52525B' : '#A1A1AA';
-            ctx.globalAlpha = 0.85;
+          } else {
+            // Upcoming unread text: soft graphite grey with gentle pre-warm
+            if (dist > -0.5) {
+              const pre = (dist + 0.5) / 0.5;
+              ctx.globalAlpha = 0.20 + pre * 0.14;
+            } else {
+              ctx.globalAlpha = 0.20;
+            }
+            ctx.fillStyle = isWhite ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.22)';
             ctx.shadowBlur = 0;
-            ctx.fillText(lyric.suffix, curX, y);
           }
-        } else {
-          // Inactive Spotify Lyric Line (Dimmed graphite)
-          ctx.font = '600 16px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
-          ctx.fillStyle = isWhite
-            ? 'rgba(0, 0, 0, 0.32)'
-            : isNear
-            ? 'rgba(255, 255, 255, 0.38)'
-            : 'rgba(255, 255, 255, 0.20)';
-          ctx.globalAlpha = isNear ? 0.75 : 0.45;
-          ctx.shadowBlur = 0;
-          ctx.fillText(lyric.fullText, 28, y);
+
+          ctx.fillText(token.text, curX, lineY);
+          curX += ctx.measureText(token.text).width;
+          ctx.restore();
+
+          globalTokenIdx++;
         }
-        ctx.restore();
       }
 
       // Footer Stats Row (Without Icons)

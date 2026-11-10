@@ -87,9 +87,16 @@ export const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     if (state === 'TRANSCRIBED') {
       const rect = e.currentTarget.getBoundingClientRect();
       const clickY = e.clientY - rect.top;
-      const lineIndex = Math.floor((clickY - 108) / 54);
-      if (lineIndex >= 0 && lineIndex < 5) {
-        engine.manualLyricIndex = lineIndex;
+      
+      let clickedLine = -1;
+      if (Math.abs(clickY - 145) < 26) clickedLine = 0;
+      else if (Math.abs(clickY - 223) < 20) clickedLine = 1;
+      else if (Math.abs(clickY - 263) < 20) clickedLine = 2;
+      else if (Math.abs(clickY - 303) < 20) clickedLine = 3;
+      else if (Math.abs(clickY - 343) < 20) clickedLine = 4;
+
+      if (clickedLine >= 0) {
+        engine.seekToLine(clickedLine);
         audioSynth.playClick(960);
       }
     }
