@@ -1,15 +1,19 @@
 /**
- * 16-Bit Bayer Dithered ASCII Bitmap Sampler (60x80)
- * Optimized for White Background + Black ASCII & Particles
+ * 16-Bit Pixel Art ASCII Bitmap Sampler (60 Cols x 80 Rows)
+ * - Record: 4,800-cell 2D Halftone Square Dot Grid rippling with voice intensity
+ * - Stop: Daily Briefing / Audio Transcription formatted with spoken text in black and others in grey
+ * - Play: 16-bit synth wave with side-to-side sweeping player line
+ * - Cassette: 16-bit pixel art cassette tape with screws, dynamic label, spools & rotating reels
+ * - 4x4 Bayer ordered dither matrix for authentic 16-bit cross-hatch stippling
  */
 
 export const BITMAP_COLS = 60;
 export const BITMAP_ROWS = 80;
 
-export const HALFTONE_RAMP = " .·:▪■█";
-export const RAMP = " .·:-=+*#%@█";
+// High-taste luminance ramp with 16-bit square block terminal glyphs
+export const RAMP = " .·:▪■█";
 
-// 4x4 Bayer Matrix for 16-bit ordered cross-hatch dithering
+// 4x4 Bayer Dither Matrix (Normalized 0..15)
 export const BAYER_4X4 = [
   [0, 8, 2, 10],
   [12, 4, 14, 6],
@@ -80,21 +84,100 @@ export function sampleBitmapToAsciiPixels(
   return activePixels;
 }
 
-// 16-Bit Transcribed Audio Note Template
-const TRANSCRIPTION_CARD = [
-  "┌──────────────────────────────────────────────────────┐",
-  "│ AUDIO NOTE // 00:14.82                48kHz / 24-BIT │",
-  "├──────────────────────────────────────────────────────┤",
-  "│ TRANSCRIPTION LOG:                                   │",
-  "│                                                      │",
-  "│ > \"Met with the hardware engineering team today.     │",
-  "│    Finalized 16-bit ASCII dither engine for deck.    │",
-  "│    Targeting 60fps locked canvas with zero overhead. │",
-  "│    Reel servo mechanics & tape tension verified.     │",
-  "│    Ready to ship firmware v2.0.\"                     │",
-  "│                                                      │",
-  "│ [STATUS: BUFFER SAVED TO MEMORY // AWAITING EJECT]   │",
-  "└──────────────────────────────────────────────────────┘",
+export interface TextSegment {
+  text: string;
+  isBlack: boolean;
+  isAccent?: boolean;
+}
+
+export interface TextLineDef {
+  row: number;
+  col: number;
+  segments: TextSegment[];
+}
+
+// Pixel art display for "Mon"
+const MON_BITMAP = [
+  { row: 10, col: 6, text: "█   █" },
+  { row: 11, col: 6, text: "██ ██  ··  ███" },
+  { row: 12, col: 6, text: "█ █ █ █  █ █  █" },
+  { row: 13, col: 6, text: "█   █ █  █ █  █" },
+  { row: 14, col: 6, text: "█   █  ██  █  █" },
+];
+
+// Spoken text layout matching user reference:
+// - Spoken text / key items: isBlack = true (renders in pure black #000000)
+// - Scaffolding, dates & units: isBlack = false (renders in muted grey #8E8E93)
+// - Without icons
+const STOP_TEXT_LINES: TextLineDef[] = [
+  // Date on the right of Mon
+  {
+    row: 11,
+    col: 44,
+    segments: [{ text: "December 9", isBlack: false }]
+  },
+  {
+    row: 13,
+    col: 50,
+    segments: [{ text: "2024", isBlack: false }]
+  },
+
+  // Body Lines (Spoken text black, connectors grey, no icons)
+  {
+    row: 24,
+    col: 6,
+    segments: [
+      { text: "Good morning, ", isBlack: false },
+      { text: "Alexey.", isBlack: true }
+    ]
+  },
+  {
+    row: 30,
+    col: 6,
+    segments: [
+      { text: "You have ", isBlack: false },
+      { text: "3 meetings,", isBlack: true }
+    ]
+  },
+  {
+    row: 36,
+    col: 6,
+    segments: [
+      { text: "2 tasks", isBlack: true },
+      { text: " and ", isBlack: false },
+      { text: "1 habit", isBlack: true }
+    ]
+  },
+  {
+    row: 42,
+    col: 6,
+    segments: [
+      { text: "today. You're ", isBlack: false },
+      { text: "mostly free", isBlack: true }
+    ]
+  },
+  {
+    row: 48,
+    col: 6,
+    segments: [
+      { text: "after ", isBlack: false },
+      { text: "4 pm.", isBlack: true }
+    ]
+  },
+
+  // Footer stats without icons (numbers black, units grey)
+  {
+    row: 64,
+    col: 6,
+    segments: [
+      { text: "4.7K", isBlack: true },
+      { text: " steps    ", isBlack: false },
+      { text: "6:37", isBlack: true },
+      { text: " hours    ", isBlack: false },
+      { text: "36", isBlack: true },
+      { text: " mins", isBlack: false }
+    ]
+  }
 ];
 
 export class BitmapSampler {
@@ -175,43 +258,72 @@ export class BitmapSampler {
   }
 
   /**
-   * STATE 3: STOP / TRANSCRIBED (Small Crisp Audio Transcription Note)
+   * STATE 3: STOP / TRANSCRIBED (Daily Briefing / Audio Transcript with Spoken Text in Black and Others in Grey)
    */
   public rasterizeTranscribedNote(cellW = 6.1, cellH = 6.65): AsciiPixelTarget[] {
     const activePixels: AsciiPixelTarget[] = [];
-    const startCol = 2;
-    const startRow = 24;
-    const cardHeight = TRANSCRIPTION_CARD.length;
-    const cardWidth = TRANSCRIPTION_CARD[0].length;
+    
+    // Construct cell map
+    const cellMap: Map<string, { char: string; lum: number; isAccent: boolean }> = new Map();
 
-    for (let r = 0; r < BITMAP_ROWS; r++) {
-      for (let c = 0; c < BITMAP_COLS; c++) {
-        const relRow = r - startRow;
-        const relCol = c - startCol;
+    // 1. Plot Big "Mon" Bitmap
+    for (const line of MON_BITMAP) {
+      for (let i = 0; i < line.text.length; i++) {
+        const ch = line.text[i];
+        if (ch !== ' ') {
+          const c = line.col + i;
+          const r = line.row;
+          cellMap.set(`${c},${r}`, { char: ch, lum: 1.0, isAccent: false });
+        }
+      }
+    }
 
-        if (relRow >= 0 && relRow < cardHeight && relCol >= 0 && relCol < cardWidth) {
-          const char = TRANSCRIPTION_CARD[relRow][relCol] || ' ';
-          if (char !== ' ') {
-            const isAccent = relRow === 1 && relCol > 38;
-            activePixels.push({
-              x: c * cellW + cellW / 2,
-              y: r * cellH + cellH / 2,
-              char,
-              lum: isAccent ? 1.0 : 0.95,
-              isAccent,
-              col: c,
-              row: r,
+    // Coral Indicator Dot at (row: 12, col: 23)
+    cellMap.set(`23,12`, { char: '●', lum: 1.0, isAccent: true });
+
+    // 2. Plot Text Lines (Date, Body Lines, Footer Stats)
+    for (const lineDef of STOP_TEXT_LINES) {
+      let currCol = lineDef.col;
+      for (const seg of lineDef.segments) {
+        for (let i = 0; i < seg.text.length; i++) {
+          const ch = seg.text[i];
+          if (ch !== ' ') {
+            cellMap.set(`${currCol},${lineDef.row}`, {
+              char: ch,
+              lum: seg.isBlack ? 1.0 : 0.45,
+              isAccent: seg.isAccent || false,
             });
           }
+          currCol++;
+        }
+      }
+    }
+
+    // 3. Populate 60x80 Grid
+    for (let r = 0; r < BITMAP_ROWS; r++) {
+      for (let c = 0; c < BITMAP_COLS; c++) {
+        const key = `${c},${r}`;
+        const entry = cellMap.get(key);
+
+        if (entry) {
+          activePixels.push({
+            x: c * cellW + cellW / 2,
+            y: r * cellH + cellH / 2,
+            char: entry.char,
+            lum: entry.lum,
+            isAccent: entry.isAccent,
+            col: c,
+            row: r,
+          });
         } else {
-          // Subtle Bayer dither stipple around memo
-          const dither = applyBayerDither(0.08, c, r, 0.2);
-          if (dither > 0.14) {
+          // Subtle ambient Bayer dither stipple outside the text
+          const dither = applyBayerDither(0.04, c, r, 0.12);
+          if (dither > 0.09) {
             activePixels.push({
               x: c * cellW + cellW / 2,
               y: r * cellH + cellH / 2,
               char: '.',
-              lum: 0.12,
+              lum: 0.1,
               isAccent: false,
               col: c,
               row: r,
@@ -248,7 +360,7 @@ export class BitmapSampler {
         const lum = Math.max(0, 255 - dist * 30);
 
         if (isPlayhead) {
-          ctx.fillStyle = 'rgba(5, 150, 105, 1.0)'; // Emerald CAD Green playhead reflection
+          ctx.fillStyle = 'rgba(5, 150, 105, 1.0)';
         } else {
           ctx.fillStyle = `rgb(${lum}, ${lum}, ${lum})`;
         }
@@ -301,53 +413,50 @@ export class BitmapSampler {
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(8, 26, 44, 10);
 
-    const displayTapeName = (tapeName || 'NOTE_01').toUpperCase();
+    // Monospace stamped note title on cassette label
     ctx.fillStyle = '#000000';
-    ctx.font = 'bold 5.5px "JetBrains Mono", monospace';
+    ctx.font = 'bold 6px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(displayTapeName.slice(0, 10), 30, 31);
+    ctx.fillText(tapeName || 'TAPE_01', 30, 31);
 
-    ctx.font = '3px "JetBrains Mono", monospace';
-    ctx.fillText('A-SIDE // 48kHz', 30, 35);
+    // 3. Dual Tape Spool Wells (Left: col 16..24, Right: col 36..44, row 37..45)
+    const spools = [
+      { cx: 20, cy: 41 },
+      { cx: 40, cy: 41 },
+    ];
 
-    // 3. Center Transparent Window (col: 13..47, row: 38..48)
-    ctx.fillStyle = '#181818';
-    ctx.fillRect(13, 38, 34, 10);
+    spools.forEach((spool) => {
+      // Spool outer ring
+      ctx.fillStyle = '#1A1A1A';
+      ctx.beginPath();
+      ctx.arc(spool.cx, spool.cy, 5, 0, Math.PI * 2);
+      ctx.fill();
 
-    ctx.fillStyle = '#553311';
-    ctx.fillRect(26, 41, 8, 4);
-
-    // 4. Dual 16-Bit Circular Reel Cutouts
-    const leftReel = { x: 20, y: 43 };
-    const rightReel = { x: 40, y: 43 };
-
-    ctx.fillStyle = '#000000';
-    ctx.beginPath();
-    ctx.arc(leftReel.x, leftReel.y, 5.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.beginPath();
-    ctx.arc(rightReel.x, rightReel.y, 5.5, 0, Math.PI * 2);
-    ctx.fill();
-
-    // 5. 6-Tooth Rotating Reel Hub Spokes
-    const spokeCount = 6;
-    const spokeRadius = 4.8;
-    ctx.fillStyle = '#059669';
-
-    [leftReel, rightReel].forEach((reel) => {
-      for (let s = 0; s < spokeCount; s++) {
-        const angle = spokeAngle + (s * Math.PI * 2) / spokeCount;
-        for (let rad = 1.2; rad <= spokeRadius; rad += 1.0) {
-          const sc = Math.round(reel.x + Math.cos(angle) * rad);
-          const sr = Math.round(reel.y + Math.sin(angle) * rad);
-          if (sc >= 0 && sc < BITMAP_COLS && sr >= 0 && sr < BITMAP_ROWS) {
-            ctx.fillRect(sc, sr, 1, 1);
-          }
-        }
+      // Rotating teeth / spokes
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1;
+      for (let a = 0; a < 3; a++) {
+        const rad = spokeAngle + (a * Math.PI * 2) / 3;
+        ctx.beginPath();
+        ctx.moveTo(spool.cx + Math.cos(rad) * 1.5, spool.cy + Math.sin(rad) * 1.5);
+        ctx.lineTo(spool.cx + Math.cos(rad) * 4.5, spool.cy + Math.sin(rad) * 4.5);
+        ctx.stroke();
       }
+
+      // Spool center hole
+      ctx.fillStyle = '#FFFFFF';
+      ctx.beginPath();
+      ctx.arc(spool.cx, spool.cy, 1.5, 0, Math.PI * 2);
+      ctx.fill();
     });
+
+    // 4. Center transparent tape observation window
+    ctx.fillStyle = '#222222';
+    ctx.fillRect(26, 38, 8, 6);
+    ctx.strokeStyle = '#666666';
+    ctx.lineWidth = 0.8;
+    ctx.strokeRect(26, 38, 8, 6);
 
     return sampleBitmapToAsciiPixels(ctx);
   }

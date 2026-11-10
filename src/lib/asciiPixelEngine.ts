@@ -367,14 +367,17 @@ export class AsciiPixelEngine {
         p.char = target.char;
 
         if (target.isAccent) {
-          p.color = accentColor;
+          p.color = '#EF4444'; // Coral dot matching screenshot
           p.targetAlpha = 1.0;
-        } else if (target.lum > 0.6) {
-          p.color = primaryColor;
+        } else if (target.lum > 0.8) {
+          p.color = primaryColor; // Spoken text black on white
           p.targetAlpha = 1.0;
+        } else if (target.lum > 0.3) {
+          p.color = isWhite ? '#8E8E93' : '#71717A'; // Other text grey
+          p.targetAlpha = 0.85;
         } else {
-          p.color = isWhite ? '#71717A' : mutedColor;
-          p.targetAlpha = 0.45 + target.lum * 0.45;
+          p.color = isWhite ? '#E4E4E7' : '#27272A'; // Ambient dither
+          p.targetAlpha = 0.15;
         }
       } else {
         // IDLE State OR unassigned surplus: 16-bit Floating Pixel Dust
@@ -428,13 +431,28 @@ export class AsciiPixelEngine {
       ctx.translate(-this.width / 2, -this.height / 2);
     }
 
-    ctx.font = '500 6px "JetBrains Mono", monospace';
+    let currentFont = '500 6px "JetBrains Mono", monospace';
+    ctx.font = currentFont;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
       if (p.char === ' ' || p.alpha <= 0.02) continue;
+
+      if (this.state === 'TRANSCRIBED') {
+        const desiredFont =
+          p.color === '#000000'
+            ? '700 7.5px "JetBrains Mono", monospace'
+            : p.color === '#EF4444'
+            ? '700 8.5px "JetBrains Mono", monospace'
+            : '500 6.5px "JetBrains Mono", monospace';
+
+        if (currentFont !== desiredFont) {
+          currentFont = desiredFont;
+          ctx.font = currentFont;
+        }
+      }
 
       ctx.fillStyle = p.color;
       ctx.globalAlpha = Math.max(0, Math.min(1, p.alpha));
