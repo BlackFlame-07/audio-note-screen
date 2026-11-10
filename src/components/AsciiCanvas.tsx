@@ -83,60 +83,34 @@ export const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     };
   }, [engine, isZoomed, state, isSimulatingAudio]);
 
-  const isWhite = theme === 'WHITE';
-
   return (
     <div
       ref={containerRef}
-      className={`relative w-[366px] h-[532px] rounded-[16px] overflow-hidden transition-colors duration-200 ${
-        isWhite ? 'white-canvas-well' : 'obsidian-canvas-well'
-      }`}
+      className="relative w-[366px] h-[532px] rounded-[16px] overflow-hidden carbon-canvas-well"
     >
       <canvas
         ref={canvasRef}
         className="block w-full h-full cursor-crosshair select-none"
       />
 
-      {/* Hardware Corner Registration Marks */}
-      <div
-        className={`pointer-events-none absolute top-2 left-2 text-[8px] font-mono select-none ${
-          isWhite ? 'text-zinc-400 opacity-60' : 'text-zinc-500 opacity-40'
-        }`}
-      >
-        ┌ 60×80 BITMAP
+      {/* Technical Wireframe Corner Registration Marks */}
+      <div className="pointer-events-none absolute top-2.5 left-2.5 text-[8px] font-pixel text-zinc-600 select-none">
+        + 60×80
       </div>
-      <div
-        className={`pointer-events-none absolute top-2 right-2 text-[8px] font-mono select-none ${
-          isWhite ? 'text-zinc-400 opacity-60' : 'text-zinc-500 opacity-40'
-        }`}
-      >
-        4,800 PIXELS ┐
+      <div className="pointer-events-none absolute top-2.5 right-2.5 text-[8px] font-pixel text-zinc-600 select-none">
+        4,800 PX +
       </div>
-      <div
-        className={`pointer-events-none absolute bottom-2 left-2 text-[8px] font-mono select-none ${
-          isWhite ? 'text-zinc-400 opacity-60' : 'text-zinc-500 opacity-40'
-        }`}
-      >
-        └ 60FPS SWARM
+      <div className="pointer-events-none absolute bottom-2.5 left-2.5 text-[8px] font-pixel text-zinc-600 select-none">
+        + 60FPS
       </div>
-      <div
-        className={`pointer-events-none absolute bottom-2 right-2 text-[8px] font-mono select-none ${
-          isWhite ? 'text-zinc-400 opacity-60' : 'text-zinc-500 opacity-40'
-        }`}
-      >
-        RASTER ┘
+      <div className="pointer-events-none absolute bottom-2.5 right-2.5 text-[8px] font-pixel text-zinc-600 select-none">
+        RASTER +
       </div>
 
       {/* 1.5x Macro Zoom Pill */}
       {isZoomed && (
-        <div
-          className={`pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full text-[9px] font-mono tracking-widest uppercase shadow-xs ${
-            isWhite
-              ? 'bg-black text-white'
-              : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/40'
-          }`}
-        >
-          1.5× MACRO ZOOM ACTIVE [Z]
+        <div className="pointer-events-none absolute top-3 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full text-[8px] font-pixel tracking-widest uppercase bg-white text-black shadow-[0_0_12px_rgba(255,255,255,0.4)]">
+          1.5× ZOOM ACTIVE [Z]
         </div>
       )}
     </div>

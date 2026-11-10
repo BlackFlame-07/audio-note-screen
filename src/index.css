@@ -2,8 +2,9 @@
 
 @layer base {
   :root {
-    --font-pixel: 'Silkscreen', 'JetBrains Mono', monospace;
-    --font-mono: 'JetBrains Mono', monospace;
+    --font-pixel: 'Silkscreen', ui-monospace, monospace;
+    --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", 'Inter', sans-serif;
   }
 
   body {
@@ -11,8 +12,8 @@
     margin: 0;
     padding: 0;
     overflow-x: hidden;
-    background-color: #070709;
-    color: #E4E4E7;
+    background-color: #0C0C0E;
+    color: #EEEEEE;
     -webkit-font-smoothing: antialiased;
   }
 }
@@ -25,57 +26,75 @@
   font-family: var(--font-mono);
 }
 
+.font-sans {
+  font-family: var(--font-sans);
+}
+
 /* =========================================================================
-   1-BIT INDUSTRIAL TACTICAL PIXEL TERMINAL SYSTEM
-   Deactivated CRT Obsidian, Monospace Pixel Typography, Bracketed Primitives
+   DARK CARBON BITMAP DESIGN SYSTEM
+   Matte Carbon Slate, 1-Bit Pixel Typography, Hairline Crosshairs, Bloom Halation
    ========================================================================= */
 
-/* Mobile Frame Chassis */
-.terminal-chassis {
-  background-color: #0D0D10;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.95), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
-}
-
-/* Recessed Display Screen Well */
-.terminal-screen-well {
-  background-color: #050507;
+/* Mobile Chassis */
+.carbon-frame {
+  background-color: #131316;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 64px -16px rgba(0, 0, 0, 0.9), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
 }
 
-/* Tactical Control Deck */
-.terminal-control-deck {
-  background-color: #0F0F13;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+/* Top Bezel Card */
+.carbon-card {
+  background-color: #17171B;
+  border: 1px solid rgba(255, 255, 255, 0.07);
 }
 
-/* Tactical Corner Bracket Button Box (Idle / Unchecked) */
-.pixel-box-idle {
-  background-color: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: #A1A1AA;
+/* Recessed Canvas Well */
+.carbon-canvas-well {
+  background-color: #0A0A0C;
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.pixel-box-idle:hover {
-  background-color: rgba(255, 255, 255, 0.06);
-  border-color: rgba(255, 255, 255, 0.3);
+/* Bottom Tactile Deck */
+.carbon-control-deck {
+  background-color: #17171B;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+/* Tactile Hardware Key (Inactive / Idle) */
+.carbon-key-idle {
+  background-color: #1A1A20;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #8A8A94;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.carbon-key-idle:hover {
+  background-color: #212128;
+  border-color: rgba(255, 255, 255, 0.22);
   color: #FFFFFF;
 }
 
-/* Tactical Solid Silver Active Block (from screenshot [✓]) */
-.pixel-box-active {
-  background-color: #D4D4D8;
-  border: 1px solid #E4E4E7;
-  color: #09090B;
+/* Tactile Hardware Key (Active - Solid Chalk White with Bloom Halation) */
+.carbon-key-active {
+  background-color: #E2E2E6;
+  border: 1px solid #FFFFFF;
+  color: #0C0C0E;
+  box-shadow: 0 0 18px 2px rgba(255, 255, 255, 0.22), 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
-/* Hairline Track for Mode Slider */
-.slider-track {
-  background-color: rgba(255, 255, 255, 0.12);
-  height: 1px;
+/* Rec Active Key (Solid Red with Halation) */
+.carbon-key-active-rec {
+  background-color: #EF4444;
+  border: 1px solid #F87171;
+  color: #FFFFFF;
+  box-shadow: 0 0 18px 2px rgba(239, 68, 68, 0.4), 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
-.slider-thumb {
-  background-color: #FAFAFA;
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.6);
+/* Hairline Wireframe Guide Grid */
+.technical-grid {
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 24px 24px;
 }

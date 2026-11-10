@@ -112,9 +112,9 @@ export class AsciiPixelEngine {
         baseX,
         baseY,
         char: '.',
-        color: '#000000',
-        alpha: 0.35,
-        targetAlpha: 0.35,
+        color: '#72727A',
+        alpha: 0.25,
+        targetAlpha: 0.25,
         isAssigned: false,
         isAccent: false,
         col,
@@ -151,9 +151,9 @@ export class AsciiPixelEngine {
   public update(timeMs: number, audioEnergy: number = 0.1) {
     const timeSec = timeMs * 0.001;
     const isWhite = this.theme === 'WHITE';
-    const primaryColor = isWhite ? '#000000' : '#FAFAFA';
-    const mutedColor = isWhite ? '#71717A' : '#71717A';
-    const accentColor = isWhite ? '#000000' : '#10B981';
+    const primaryColor = isWhite ? '#000000' : '#FFFFFF';
+    const mutedColor = isWhite ? '#71717A' : '#72727A';
+    const accentColor = isWhite ? '#000000' : '#EF4444';
 
     this.spokeAngle += 0.08;
     this.playheadCol = (Math.sin(timeSec * 2.2) * 0.5 + 0.5) * (BITMAP_COLS - 1);
@@ -419,9 +419,9 @@ export class AsciiPixelEngine {
   public render(ctx: CanvasRenderingContext2D, isZoomed: boolean = false) {
     ctx.save();
     
-    // Pure White background (or Obsidian in dark mode)
+    // Deep Matte Carbon Well (or Pure White in white mode)
     const isWhite = this.theme === 'WHITE';
-    ctx.fillStyle = isWhite ? '#FFFFFF' : '#08080A';
+    ctx.fillStyle = isWhite ? '#FFFFFF' : '#0A0A0C';
     ctx.fillRect(0, 0, this.width, this.height);
 
     if (isZoomed) {
@@ -441,8 +441,9 @@ export class AsciiPixelEngine {
       if (p.char === ' ' || p.alpha <= 0.02) continue;
 
       if (this.state === 'TRANSCRIBED') {
+        const isSpoken = p.color === '#000000' || p.color === '#FFFFFF';
         const desiredFont =
-          p.color === '#000000'
+          isSpoken
             ? '700 7.5px "JetBrains Mono", monospace'
             : p.color === '#EF4444'
             ? '700 8.5px "JetBrains Mono", monospace'
@@ -462,7 +463,7 @@ export class AsciiPixelEngine {
     // 1px Laser Player Line sweeping from side to side in PLAYING state
     if (this.state === 'PLAYING') {
       const px = this.originX + this.playheadCol * this.cellW + this.cellW / 2;
-      const playheadColor = isWhite ? '#000000' : '#10B981';
+      const playheadColor = isWhite ? '#000000' : '#FFFFFF';
 
       ctx.strokeStyle = playheadColor;
       ctx.lineWidth = 1;
