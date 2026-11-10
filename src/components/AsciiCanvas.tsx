@@ -63,6 +63,12 @@ export const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     handleResize();
     window.addEventListener('resize', handleResize);
 
+    if (typeof document !== 'undefined' && document.fonts) {
+      document.fonts.ready.then(() => {
+        engine.markCharLayoutDirty();
+      });
+    }
+
     const renderLoop = (now: number) => {
       const needVocalCadence = state === 'RECORDING' || state === 'PLAYING' || isSimulatingAudio;
       const audioData = audioSynth.getLiveAudioEnergy(now * 0.001, needVocalCadence);

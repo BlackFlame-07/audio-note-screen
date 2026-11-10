@@ -39,57 +39,100 @@ export interface PixelParticle {
   row: number;
 }
 
-export interface MemoToken {
+export interface MemoChar {
+  char: string;
+  lineIndex: number;
+  charIndexInLine: number;
+  isAccent: boolean;
+  tStart: number; // in seconds from start of speech
+  tEnd: number;   // in seconds
+  charX: number;  // pixel X coordinate on canvas
+  charY: number;  // pixel Y coordinate on canvas
+}
+
+export interface MemoLineDef {
   text: string;
-  isAccent?: boolean; // Accent keyword (Alexey, 3 meetings, 2 tasks, mostly free, 4 pm)
+  accentRanges: [number, number][]; // [start, end]
 }
 
-export interface MemoLine {
-  paragraphId: number; // 0 for greeting paragraph, 1 for main summary paragraph
-  tokens: MemoToken[];
-}
-
-export const MEMO_PARAGRAPHS: MemoLine[] = [
-  // Paragraph 1: Greeting
+export const MEMO_LINE_DEFS: MemoLineDef[] = [
   {
-    paragraphId: 0,
-    tokens: [
-      { text: "Good morning, " },
-      { text: "Alexey.", isAccent: true },
-    ],
-  },
-  // Paragraph 2: Daily Briefing Paragraph
-  {
-    paragraphId: 1,
-    tokens: [
-      { text: "You have " },
-      { text: "3 meetings,", isAccent: true },
-    ],
+    text: "Good morning, Alexey.",
+    accentRanges: [[14, 21]], // "Alexey."
   },
   {
-    paragraphId: 1,
-    tokens: [
-      { text: "2 tasks", isAccent: true },
-      { text: " and 1 habit" },
-    ],
+    text: "You have 3 meetings,",
+    accentRanges: [[9, 20]], // "3 meetings,"
   },
   {
-    paragraphId: 1,
-    tokens: [
-      { text: "today. " },
-      { text: "You're mostly free", isAccent: true },
-    ],
+    text: "2 tasks and 1 habit",
+    accentRanges: [[0, 7]], // "2 tasks"
   },
   {
-    paragraphId: 1,
-    tokens: [
-      { text: "after " },
-      { text: "4 pm.", isAccent: true },
-    ],
+    text: "today. You're mostly free",
+    accentRanges: [[14, 25]], // "mostly free"
+  },
+  {
+    text: "after 4 pm.",
+    accentRanges: [[6, 11]], // "4 pm."
   },
 ];
 
 export const LINE_Y_POSITIONS = [145, 223, 263, 303, 343];
+
+/**
+ * Builds the exact letter-by-letter acoustic speech timeline
+ * with genuine conversational punctuation pauses (~160-170 WPM).
+ */
+export function buildMemoChars(): { chars: MemoChar[]; totalDuration: number; lineStartTimes: number[] } {
+  const chars: MemoChar[] = [];
+  const lineStartTimes: number[] = [];
+  let currentTime = 0;
+
+  for (let lIdx = 0; lIdx < MEMO_LINE_DEFS.length; lIdx++) {
+    const lineDef = MEMO_LINE_DEFS[lIdx];
+    lineStartTimes.push(currentTime);
+
+    for (let cIdx = 0; cIdx < lineDef.text.length; cIdx++) {
+      const char = lineDef.text[cIdx];
+      const isAccent = lineDef.accentRanges.some(([start, end]) => cIdx >= start && cIdx < end);
+
+      const tStart = currentTime;
+      let duration = 0.046; // Base char duration for brisk conversational speech
+
+      // Punctuation pauses in normal human talking cadence
+      if (char === ',') {
+        duration += 0.28; // Comma clause breathing pause (280ms)
+      } else if (char === '.') {
+        if (lIdx === 0) {
+          duration += 0.62; // Salutation paragraph pause (620ms)
+        } else if (lIdx === 3 && cIdx < 10) {
+          duration += 0.42; // Sentence stop pause after "today." (420ms)
+        } else {
+          duration += 0.45; // Final period pause (450ms)
+        }
+      } else if (cIdx === lineDef.text.length - 1 && lIdx === 2) {
+        duration += 0.16; // Inter-line phrase cadence pause (160ms)
+      }
+
+      const tEnd = tStart + duration;
+      chars.push({
+        char,
+        lineIndex: lIdx,
+        charIndexInLine: cIdx,
+        isAccent,
+        tStart,
+        tEnd,
+        charX: 0,
+        charY: LINE_Y_POSITIONS[lIdx],
+      });
+
+      currentTime = tEnd;
+    }
+  }
+
+  return { chars, totalDuration: currentTime, lineStartTimes };
+}
 
 export const PARTICLE_COUNT = 4800; // 60 cols x 80 rows full-frame dot matrix
 const IDLE_GLYPHS = ['.', '·', ':', '+', '*'];
@@ -113,6 +156,12 @@ export class AsciiPixelEngine {
   public activeLyricIndex: number = 0;
   public manualLyricIndex: number = -1;
   public readingProgress: number = 0;
+  public readingProgressSec: number = 0;
+  public memoChars: MemoChar[] = [];
+  public totalSpeakingDuration: number = 6.63;
+  public holdDuration: number = 1.60;
+  public lineStartTimes: number[] = [0.0, 1.87, 3.07, 4.10, 5.67];
+  private isCharLayoutReady: boolean = false;
   private lastTimeSec: number = 0;
 
   public transitionProgress: number = 1.0;
@@ -125,6 +174,10 @@ export class AsciiPixelEngine {
   constructor() {
     this.sampler = new BitmapSampler();
     this.initParticlePool();
+    const timeline = buildMemoChars();
+    this.memoChars = timeline.chars;
+    this.totalSpeakingDuration = timeline.totalDuration;
+    this.lineStartTimes = timeline.lineStartTimes;
   }
 
   public resize(w: number, h: number) {
@@ -134,6 +187,7 @@ export class AsciiPixelEngine {
     this.cellH = h / BITMAP_ROWS;
     this.originX = 0;
     this.originY = 0;
+    this.isCharLayoutReady = false;
 
     for (let i = 0; i < this.particles.length; i++) {
       const p = this.particles[i];
@@ -188,13 +242,38 @@ export class AsciiPixelEngine {
       this.isEjecting = false;
       this.ejectVelocity = 0;
       if (nextState === 'TRANSCRIBED') {
-        this.readingProgress = 0;
+        this.readingProgressSec = 0;
       }
     }
   }
 
   public seekToLine(lineIdx: number) {
-    this.readingProgress = Math.max(0, Math.min(9, lineIdx * 2));
+    if (lineIdx >= 0 && lineIdx < this.lineStartTimes.length) {
+      this.readingProgressSec = this.lineStartTimes[lineIdx];
+    }
+  }
+
+  public markCharLayoutDirty() {
+    this.isCharLayoutReady = false;
+  }
+
+  public layoutMemoChars(ctx: CanvasRenderingContext2D) {
+    ctx.save();
+    ctx.font = '600 19px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
+    const startX = 24;
+
+    for (let lIdx = 0; lIdx < MEMO_LINE_DEFS.length; lIdx++) {
+      const lineText = MEMO_LINE_DEFS[lIdx].text;
+      const lineChars = this.memoChars.filter(c => c.lineIndex === lIdx);
+
+      for (let i = 0; i < lineChars.length; i++) {
+        const c = lineChars[i];
+        c.charX = startX + ctx.measureText(lineText.substring(0, c.charIndexInLine)).width;
+        c.charY = LINE_Y_POSITIONS[lIdx];
+      }
+    }
+    ctx.restore();
+    this.isCharLayoutReady = true;
   }
 
   public triggerEject(onComplete?: () => void) {
@@ -225,12 +304,12 @@ export class AsciiPixelEngine {
     this.spokeAngle += 0.08;
     this.playheadCol = (Math.sin(timeSec * 2.2) * 0.5 + 0.5) * (BITMAP_COLS - 1);
 
-    // Smooth continuous reading progression in TRANSCRIBED mode (10 tokens across 5 lines)
+    // Letter-by-letter continuous reading progression with natural punctuation pauses
     if (this.state === 'TRANSCRIBED') {
-      const readingSpeed = 1.55; // Natural human conversational talking speed (~165 WPM)
-      this.readingProgress += dt * readingSpeed;
-      if (this.readingProgress > 12.0) {
-        this.readingProgress = 0;
+      this.readingProgressSec += dt;
+      const totalCycle = this.totalSpeakingDuration + this.holdDuration;
+      if (this.readingProgressSec > totalCycle) {
+        this.readingProgressSec = 0;
       }
     }
 
@@ -583,59 +662,52 @@ export class AsciiPixelEngine {
       ctx.lineTo(this.width - 20, 58);
       ctx.stroke();
 
-      // Paragraph Formatted Reading UI with Silky Smooth Karaoke Progression (No Left Side Bar)
-      const startX = 24;
+      // Paragraph Formatted Reading UI: Letter-by-Letter Acoustic Lighting
+      if (!this.isCharLayoutReady) {
+        this.layoutMemoChars(ctx);
+      }
+
+      const t = this.readingProgressSec;
       ctx.font = '600 19px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
 
-      let globalTokenIdx = 0;
+      for (let i = 0; i < this.memoChars.length; i++) {
+        const mc = this.memoChars[i];
+        if (mc.char === ' ') continue;
 
-      for (let lineIdx = 0; lineIdx < MEMO_PARAGRAPHS.length; lineIdx++) {
-        const line = MEMO_PARAGRAPHS[lineIdx];
-        const lineY = LINE_Y_POSITIONS[lineIdx];
-        let curX = startX;
-
-        for (let tIdx = 0; tIdx < line.tokens.length; tIdx++) {
-          const token = line.tokens[tIdx];
-          const dist = this.readingProgress - globalTokenIdx;
-
-          ctx.save();
-          if (dist >= 1.0) {
-            // Spoken / already read: clear, stable chalk white
-            ctx.fillStyle = isWhite ? '#18181B' : '#E4E4E7';
-            ctx.globalAlpha = token.isAccent ? 0.95 : 0.72;
-            ctx.shadowBlur = 0;
-          } else if (dist >= 0.0 && dist < 1.0) {
-            // Currently being read: smooth bell ease & blooming halation
-            const u = dist; // 0.0 -> 1.0
-            const bell = Math.sin(u * Math.PI);
-            ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
-            ctx.globalAlpha = 0.35 + 0.65 * Math.min(1, u * 2.2);
-            if (!isWhite) {
-              ctx.shadowColor = token.isAccent
-                ? 'rgba(255, 255, 255, 0.75)'
-                : 'rgba(255, 255, 255, 0.45)';
-              ctx.shadowBlur = Math.round(bell * 14);
-            }
-          } else {
-            // Upcoming unread text: soft graphite grey with gentle pre-warm
-            if (dist > -0.5) {
-              const pre = (dist + 0.5) / 0.5;
-              ctx.globalAlpha = 0.20 + pre * 0.14;
-            } else {
-              ctx.globalAlpha = 0.20;
-            }
-            ctx.fillStyle = isWhite ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.22)';
-            ctx.shadowBlur = 0;
+        ctx.save();
+        if (t >= mc.tEnd) {
+          // 1. Spoken / Already read: clean, solid, legible chalk white
+          ctx.fillStyle = isWhite ? '#18181B' : '#E4E4E7';
+          ctx.globalAlpha = mc.isAccent ? 1.0 : 0.85;
+          ctx.shadowBlur = 0;
+        } else if (t >= mc.tStart) {
+          // 2. Currently being spoken / ignited: radiant blooming halation
+          const progressInChar = (t - mc.tStart) / Math.max(0.001, mc.tEnd - mc.tStart);
+          ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
+          ctx.globalAlpha = 1.0;
+          if (!isWhite) {
+            ctx.shadowColor = mc.isAccent
+              ? 'rgba(255, 255, 255, 0.85)'
+              : 'rgba(255, 255, 255, 0.60)';
+            ctx.shadowBlur = Math.round(10 + Math.sin(progressInChar * Math.PI) * 8);
           }
-
-          ctx.fillText(token.text, curX, lineY);
-          curX += ctx.measureText(token.text).width;
-          ctx.restore();
-
-          globalTokenIdx++;
+        } else {
+          // 3. Not yet spoken: soft graphite grey with gentle pre-warm
+          const dtUntilStart = mc.tStart - t;
+          if (dtUntilStart < 0.08) {
+            const pre = (0.08 - dtUntilStart) / 0.08;
+            ctx.globalAlpha = 0.20 + pre * 0.16;
+          } else {
+            ctx.globalAlpha = 0.20;
+          }
+          ctx.fillStyle = isWhite ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.20)';
+          ctx.shadowBlur = 0;
         }
+
+        ctx.fillText(mc.char, mc.charX, mc.charY);
+        ctx.restore();
       }
 
       // Footer Stats Row (Without Icons)
