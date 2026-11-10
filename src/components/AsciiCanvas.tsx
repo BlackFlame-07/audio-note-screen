@@ -83,6 +83,18 @@ export const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     };
   }, [engine, isZoomed, state, isSimulatingAudio]);
 
+  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    if (state === 'TRANSCRIBED') {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const clickY = e.clientY - rect.top;
+      const lineIndex = Math.floor((clickY - 108) / 54);
+      if (lineIndex >= 0 && lineIndex < 5) {
+        engine.manualLyricIndex = lineIndex;
+        audioSynth.playClick(960);
+      }
+    }
+  };
+
   return (
     <div
       ref={containerRef}
@@ -90,7 +102,8 @@ export const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     >
       <canvas
         ref={canvasRef}
-        className="block w-full h-full cursor-crosshair select-none"
+        onClick={handleCanvasClick}
+        className="block w-full h-full cursor-pointer select-none"
       />
 
       {/* Technical Wireframe Corner Registration Marks */}
