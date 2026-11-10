@@ -161,6 +161,8 @@ export class AsciiPixelEngine {
   public totalSpeakingDuration: number = 6.63;
   public holdDuration: number = 1.60;
   public lineStartTimes: number[] = [0.0, 1.87, 3.07, 4.10, 5.67];
+  public currentTimeSec: number = 0;
+  public currentAudioEnergy: number = 0.1;
   private isCharLayoutReady: boolean = false;
   private lastTimeSec: number = 0;
 
@@ -295,6 +297,8 @@ export class AsciiPixelEngine {
     const timeSec = timeMs * 0.001;
     const dt = this.lastTimeSec > 0 ? Math.min(0.1, Math.max(0.001, timeSec - this.lastTimeSec)) : 0.016;
     this.lastTimeSec = timeSec;
+    this.currentTimeSec = timeSec;
+    this.currentAudioEnergy = audioEnergy;
 
     const isWhite = this.theme === 'WHITE';
     const primaryColor = isWhite ? '#000000' : '#FFFFFF';
@@ -349,73 +353,18 @@ export class AsciiPixelEngine {
     }
 
     // =========================================================================
-    // STATE 2: RECORDING (Softer, Gentle Organic Acoustic Swells)
+    // STATE 2: RECORDING (Halftone Fluid Organic Blob Field)
+    // Swarm particles rest in background ready for state transitions
     // =========================================================================
     if (this.state === 'RECORDING') {
-      const voiceAmp = Math.max(0.08, Math.min(0.85, audioEnergy));
-      // Calmer, gentler wave progression speed
-      const speed = 1.8 + voiceAmp * 3.2;
-
       for (let i = 0; i < this.particles.length; i++) {
         const p = this.particles[i];
-        const c = p.col;
-        const r = p.row;
-
-        // Strictly anchored to regular grid
         p.targetX = p.baseX;
         p.targetY = p.baseY;
-
-        // Broad, gentle acoustic fluid swells (soft lower spatial frequency)
-        const d1 = Math.hypot(c - 30, (r - 40) * 0.82);
-        const d2 = Math.hypot(c - 28, (r - 36) * 0.82);
-        const w1 = Math.sin(d1 * 0.16 - timeSec * speed);
-        const w2 = Math.cos(d2 * 0.22 - timeSec * (speed * 0.8)) * 0.35;
-        const gentleSwell = Math.sin(timeSec * 2.4 + c * 0.08) * (voiceAmp * 0.22);
-
-        // Soft radial attenuation
-        const halo = Math.exp(-d1 * 0.05) * voiceAmp * 0.42;
-
-        // Soft composite luminance with gradual breathing dynamic
-        const composite = w1 * 0.38 + w2 + gentleSwell + halo + 0.26;
-        const clampedLum = Math.max(0, Math.min(1, composite));
-
-        // 16-bit Bayer dither applied to the halftone grid
-        const ditheredLum = applyBayerDither(clampedLum, c, r, 0.18);
-
-        // Map to square halftone glyphs: " .·:▪■█"
-        if (ditheredLum > 0.85) {
-          p.char = '█'; // Full block
-          p.color = primaryColor;
-          p.targetAlpha = 0.95;
-        } else if (ditheredLum > 0.68) {
-          p.char = '■'; // Large square
-          p.color = primaryColor;
-          p.targetAlpha = 0.85;
-        } else if (ditheredLum > 0.50) {
-          p.char = '▪'; // Small square
-          p.color = isWhite ? '#333333' : '#D4D4D8';
-          p.targetAlpha = 0.72;
-        } else if (ditheredLum > 0.34) {
-          p.char = ':'; // Double dot
-          p.color = isWhite ? '#666666' : '#8A8A94';
-          p.targetAlpha = 0.55;
-        } else if (ditheredLum > 0.18) {
-          p.char = '·'; // Center dot
-          p.color = isWhite ? '#999999' : '#55555E';
-          p.targetAlpha = 0.38;
-        } else if (ditheredLum > 0.08) {
-          p.char = '.'; // Micro dot
-          p.color = isWhite ? '#BBBBBB' : '#363640';
-          p.targetAlpha = 0.22;
-        } else {
-          p.char = ' '; // Empty space revealing dark canvas well
-          p.targetAlpha = 0.0;
-        }
-
-        // Fast spring lerp into grid position
-        p.x += (p.targetX - p.x) * 0.22;
-        p.y += (p.targetY - p.y) * 0.22;
-        p.alpha += (p.targetAlpha - p.alpha) * 0.18;
+        p.targetAlpha = 0;
+        p.x += (p.targetX - p.x) * 0.15;
+        p.y += (p.targetY - p.y) * 0.15;
+        p.alpha += (0 - p.alpha) * 0.15;
       }
       return;
     }
@@ -594,13 +543,202 @@ export class AsciiPixelEngine {
   }
 
   /**
+   * State 2: RECORDING
+   * Halftone Fluid Organic Blob Field (Liquid Halftone Matrix)
+   * Derived 1:1 from user reference: multi-harmonic organic metaballs sampled
+   * onto a 2D halftone screen with volumetric core underglow, squarcle saturation, and voice reactivity.
+   */
+  public renderRecordingHalftone(ctx: CanvasRenderingContext2D) {
+    // In RECORDING mode, render the signature blue halftone fluid matrix matching the reference brief
+    const isWhite = true;
+    const voiceAmp = Math.max(0.10, Math.min(0.95, this.currentAudioEnergy));
+    const t = this.currentTimeSec * 0.75;
+
+    const COLS = 50;
+    const ROWS = 72;
+    const cellW = this.width / COLS;
+    const cellH = this.height / ROWS;
+
+    // Organic morphing metaball attractors positioned to match reference composition
+    const blobs = [
+      // Top-left macro cloud
+      {
+        x: this.width * (0.16 + Math.sin(t * 0.7) * 0.05),
+        y: this.height * (0.10 + Math.cos(t * 0.6) * 0.04),
+        rx: 130, ry: 105,
+        power: 1.1,
+        hasWhiteCore: true,
+      },
+      // Top-center luminous core
+      {
+        x: this.width * (0.52 + Math.cos(t * 0.8) * 0.06),
+        y: this.height * (0.12 + Math.sin(t * 0.7) * 0.04),
+        rx: 100, ry: 85,
+        power: 1.15,
+        hasWhiteCore: true,
+      },
+      // Center-left standalone droplet
+      {
+        x: this.width * (0.22 + Math.sin(t * 1.0 + 1.2) * 0.04),
+        y: this.height * (0.42 + Math.cos(t * 0.9 + 1.5) * 0.04),
+        rx: 46, ry: 46,
+        power: 1.05,
+        hasWhiteCore: false,
+      },
+      // Right-center edge cluster
+      {
+        x: this.width * (0.94 + Math.sin(t * 0.6 + 2.5) * 0.04),
+        y: this.height * (0.40 + Math.cos(t * 0.8 + 2.0) * 0.05),
+        rx: 85, ry: 95,
+        power: 1.0,
+        hasWhiteCore: true,
+      },
+      // Lower-center wide peninsula
+      {
+        x: this.width * (0.34 + Math.cos(t * 0.5 + 3.1) * 0.06),
+        y: this.height * (0.64 + Math.sin(t * 0.7 + 3.0) * 0.05),
+        rx: 125, ry: 80,
+        power: 1.05,
+        hasWhiteCore: true,
+      },
+      // Bottom-right cluster
+      {
+        x: this.width * (0.85 + Math.sin(t * 0.7 + 4.2) * 0.05),
+        y: this.height * (0.84 + Math.cos(t * 0.6 + 4.0) * 0.05),
+        rx: 90, ry: 80,
+        power: 1.0,
+        hasWhiteCore: true,
+      },
+      // Bottom-left edge anchor
+      {
+        x: this.width * (0.08 + Math.cos(t * 0.8 + 5.0) * 0.04),
+        y: this.height * (0.88 + Math.sin(t * 0.6 + 5.2) * 0.04),
+        rx: 85, ry: 80,
+        power: 0.95,
+        hasWhiteCore: false,
+      },
+    ];
+
+    // 1. Volumetric Underglow Layer (soft milky-white core bloom)
+    for (const b of blobs) {
+      if (!b.hasWhiteCore) continue;
+      const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.rx * 0.95);
+      if (isWhite) {
+        grad.addColorStop(0, 'rgba(255, 255, 255, 1.0)');
+        grad.addColorStop(0.35, 'rgba(235, 245, 255, 0.90)');
+        grad.addColorStop(0.70, 'rgba(219, 234, 254, 0.45)');
+        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      } else {
+        grad.addColorStop(0, 'rgba(255, 255, 255, 0.35)');
+        grad.addColorStop(0.35, 'rgba(56, 189, 248, 0.25)');
+        grad.addColorStop(0.70, 'rgba(59, 130, 246, 0.12)');
+        grad.addColorStop(1, 'rgba(10, 10, 12, 0)');
+      }
+      ctx.fillStyle = grad;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.rx * 0.95, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 2. 2D Halftone Dot Grid Sampling with Harmonic Turbulence & Audio Reactive Swell
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        const cx = c * cellW + cellW / 2;
+        const cy = r * cellH + cellH / 2;
+        const nx = c / COLS;
+        const ny = r / ROWS;
+
+        // Fluid wave noise & eddy currents
+        const turbulence =
+          Math.sin(nx * 4.8 + ny * 4.2 + t * 1.1) * 0.12 +
+          Math.cos(nx * 6.5 - ny * 5.8 - t * 0.9) * 0.09 +
+          Math.sin((nx + ny) * 7.0 + t * 1.5) * 0.05;
+
+        // Sum metaball potentials
+        let potential = 0;
+        for (const b of blobs) {
+          const dx = (cx - b.x) / b.rx;
+          const dy = (cy - b.y) / b.ry;
+          const distSq = dx * dx + dy * dy;
+          if (distSq < 2.2) {
+            potential += b.power * Math.exp(-distSq * 1.75);
+          }
+        }
+
+        // Voice audio reactive swell
+        const rawField = (potential + turbulence) * (1.0 + voiceAmp * 0.28);
+
+        // Threshold for clean negative channels
+        const threshold = 0.34;
+        if (rawField < threshold) continue;
+
+        const normField = Math.min(1.0, (rawField - threshold) / 0.85);
+
+        // Dot size calculation: scales with field, never touching neighbors to preserve halftone grid
+        const maxRadius = Math.min(cellW, cellH) * 0.44; // ~2.8px radius
+        const dotRadius = Math.max(0.65, normField * maxRadius);
+
+        // Authentic Color Palette from Reference Image
+        let dotColor = '#3B82F6';
+        let alpha = 1.0;
+
+        if (isWhite) {
+          if (normField > 0.82) {
+            dotColor = '#93C5FD'; // Light milky sky-blue in core
+            alpha = 0.92;
+          } else if (normField > 0.60) {
+            dotColor = '#60A5FA'; // Vibrant cerulean
+            alpha = 0.98;
+          } else if (normField > 0.32) {
+            dotColor = '#3B82F6'; // Cobalt blue
+            alpha = 1.0;
+          } else {
+            dotColor = '#2563EB'; // Rich shoreline blue
+            alpha = 0.95;
+          }
+        } else {
+          if (normField > 0.82) {
+            dotColor = '#FFFFFF'; // Radiant white core
+            alpha = 1.0;
+          } else if (normField > 0.60) {
+            dotColor = '#38BDF8'; // Sky cyan
+            alpha = 0.96;
+          } else if (normField > 0.32) {
+            dotColor = '#3B82F6'; // Electric blue
+            alpha = 0.92;
+          } else {
+            dotColor = '#1D4ED8'; // Deep cobalt edge
+            alpha = 0.78;
+          }
+        }
+
+        ctx.fillStyle = dotColor;
+        ctx.globalAlpha = alpha;
+        ctx.beginPath();
+
+        if (normField > 0.68) {
+          // Halftone rounded squarcle under high ink saturation
+          const side = dotRadius * 1.95;
+          const corner = side * 0.36;
+          ctx.roundRect(cx - side / 2, cy - side / 2, side, side, corner);
+        } else {
+          // Crisp circular halftone dot
+          ctx.arc(cx, cy, dotRadius, 0, Math.PI * 2);
+        }
+        ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 1.0;
+  }
+
+  /**
    * Single-Pass Canvas 2D Draw Call
    */
   public render(ctx: CanvasRenderingContext2D, isZoomed: boolean = false) {
     ctx.save();
     
-    // Deep Matte Carbon Well
-    const isWhite = this.theme === 'WHITE';
+    // Canvas Well Background: Pure paper white for RECORDING fluid matrix (matching brief), dark carbon for other states
+    const isWhite = this.theme === 'WHITE' || this.state === 'RECORDING';
     ctx.fillStyle = isWhite ? '#FFFFFF' : '#0A0A0C';
     ctx.fillRect(0, 0, this.width, this.height);
 
@@ -611,19 +749,23 @@ export class AsciiPixelEngine {
       ctx.translate(-this.width / 2, -this.height / 2);
     }
 
-    // 1. Draw ASCII Particles (Record, Play, Cassette, Idle & Transcribed ambient dust)
-    let currentFont = '500 6px "JetBrains Mono", monospace';
-    ctx.font = currentFont;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    // 1. Render Visual Matrix Core
+    if (this.state === 'RECORDING') {
+      this.renderRecordingHalftone(ctx);
+    } else {
+      let currentFont = '500 6px "JetBrains Mono", monospace';
+      ctx.font = currentFont;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
 
-    for (let i = 0; i < this.particles.length; i++) {
-      const p = this.particles[i];
-      if (p.char === ' ' || p.alpha <= 0.02) continue;
+      for (let i = 0; i < this.particles.length; i++) {
+        const p = this.particles[i];
+        if (p.char === ' ' || p.alpha <= 0.02) continue;
 
-      ctx.fillStyle = p.color;
-      ctx.globalAlpha = Math.max(0, Math.min(1, p.alpha));
-      ctx.fillText(p.char, p.x, p.y);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.alpha));
+        ctx.fillText(p.char, p.x, p.y);
+      }
     }
 
     // 2. STATE 3: SPOTIFY LYRICS UI & KARAOKE ILLUMINATION

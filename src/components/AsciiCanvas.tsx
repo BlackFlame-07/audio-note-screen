@@ -120,17 +120,17 @@ export const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
       />
 
       {/* Technical Wireframe Corner Registration Marks */}
-      <div className="pointer-events-none absolute top-2.5 left-2.5 text-[8px] font-pixel text-zinc-600 select-none">
-        + 60×80
+      <div className={`pointer-events-none absolute top-2.5 left-2.5 text-[8px] font-pixel select-none transition-colors ${state === 'RECORDING' ? 'text-blue-900/40' : 'text-zinc-600'}`}>
+        + 50×72
       </div>
-      <div className="pointer-events-none absolute top-2.5 right-2.5 text-[8px] font-pixel text-zinc-600 select-none">
-        4,800 PX +
+      <div className={`pointer-events-none absolute top-2.5 right-2.5 text-[8px] font-pixel select-none transition-colors ${state === 'RECORDING' ? 'text-blue-900/40' : 'text-zinc-600'}`}>
+        HALFTONE +
       </div>
-      <div className="pointer-events-none absolute bottom-2.5 left-2.5 text-[8px] font-pixel text-zinc-600 select-none">
+      <div className={`pointer-events-none absolute bottom-2.5 left-2.5 text-[8px] font-pixel select-none transition-colors ${state === 'RECORDING' ? 'text-blue-900/40' : 'text-zinc-600'}`}>
         + 60FPS
       </div>
-      <div className="pointer-events-none absolute bottom-2.5 right-2.5 text-[8px] font-pixel text-zinc-600 select-none">
-        RASTER +
+      <div className={`pointer-events-none absolute bottom-2.5 right-2.5 text-[8px] font-pixel select-none transition-colors ${state === 'RECORDING' ? 'text-blue-900/40' : 'text-zinc-600'}`}>
+        FLUID +
       </div>
 
       {/* 1.5x Macro Zoom Pill */}
