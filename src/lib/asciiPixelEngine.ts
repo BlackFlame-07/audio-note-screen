@@ -48,6 +48,11 @@ export interface MemoChar {
   tEnd: number;   // in seconds
   charX: number;  // pixel X coordinate on canvas
   charY: number;  // pixel Y coordinate on canvas
+  seedX?: number;
+  seedY?: number;
+  scatterX?: number;
+  scatterY?: number;
+  stagger?: number;
 }
 
 export interface MemoLineDef {
@@ -169,6 +174,8 @@ export class AsciiPixelEngine {
 
   public transitionProgress: number = 1.0;
   public prevState: AppState = 'IDLE';
+  public isTransformingToStop: boolean = false;
+  public stopTransformProgress: number = 0;
 
   public isEjecting: boolean = false;
   public ejectVelocity: number = 0;
@@ -239,14 +246,55 @@ export class AsciiPixelEngine {
 
   public setState(nextState: AppState) {
     if (this.state !== nextState) {
+      const prev = this.state;
       this.prevState = this.state;
       this.state = nextState;
       this.transitionProgress = 0.0;
       this.isEjecting = false;
       this.ejectVelocity = 0;
-      if (nextState === 'TRANSCRIBED') {
+
+      if (prev === 'RECORDING' && nextState === 'TRANSCRIBED') {
+        this.triggerStopTransition();
+      } else if (nextState === 'TRANSCRIBED') {
+        this.isTransformingToStop = false;
         this.readingProgressSec = 0;
       }
+    }
+  }
+
+  /**
+   * Triggers the dispersion and typographic transformation
+   * when transitioning from RECORDING fluid mode to TRANSCRIBED stop mode.
+   */
+  public triggerStopTransition() {
+    this.isTransformingToStop = true;
+    this.stopTransformProgress = 0.0;
+    this.readingProgressSec = 0.0;
+
+    // Snapshot active rounded fluid blob centers as departure points
+    const t = this.fluidFlowPhase;
+    const blobCenters = [
+      { x: this.width * (0.38 + 0.22 * Math.sin(t * 0.45) + 0.08 * Math.cos(t * 0.90)), y: this.height * (0.24 + 0.12 * Math.cos(t * 0.38)) },
+      { x: this.width * (0.58 + 0.22 * Math.cos(t * 0.36 + 1.6)), y: this.height * (0.64 + 0.14 * Math.sin(t * 0.42 + 0.9)) },
+      { x: this.width * (0.48 + 0.32 * Math.sin(t * 0.72 + 2.5)), y: this.height * (0.44 + 0.30 * Math.cos(t * 0.65 + 1.8)) },
+      { x: this.width * (0.22 + 0.15 * Math.cos(t * 0.80 + 3.8)), y: this.height * (0.52 + 0.20 * Math.sin(t * 0.60 + 2.4)) },
+      { x: this.width * (0.88 + 0.08 * Math.sin(t * 0.48 + 1.0)), y: this.height * (0.16 + 0.12 * Math.cos(t * 0.58 + 3.2)) },
+    ];
+
+    for (let i = 0; i < this.memoChars.length; i++) {
+      const c = this.memoChars[i];
+      const blob = blobCenters[i % blobCenters.length];
+      const seedAngle = (i * 1.37) % (Math.PI * 2);
+      const seedDist = 12 + (i * 7) % 36;
+      c.seedX = blob.x + Math.cos(seedAngle) * seedDist;
+      c.seedY = blob.y + Math.sin(seedAngle) * seedDist;
+
+      // Disperse outward with explosion momentum
+      const scatterAngle = (i * 2.399) % (Math.PI * 2);
+      const scatterDist = 45 + (i * 19) % 110;
+      c.scatterX = c.seedX + Math.cos(scatterAngle) * scatterDist;
+      c.scatterY = c.seedY + Math.sin(scatterAngle) * scatterDist;
+      c.stagger = (i % 20) * 0.012;
     }
   }
 
@@ -316,8 +364,16 @@ export class AsciiPixelEngine {
     this.spokeAngle += 0.08;
     this.playheadCol = (Math.sin(timeSec * 2.2) * 0.5 + 0.5) * (BITMAP_COLS - 1);
 
-    // Letter-by-letter continuous reading progression with natural punctuation pauses
-    if (this.state === 'TRANSCRIBED') {
+    // Transformation from Recording to Stop mode or continuous karaoke reading
+    if (this.isTransformingToStop) {
+      // 1.1s cinematic dispersion and typographic transformation
+      this.stopTransformProgress += dt / 1.1;
+      if (this.stopTransformProgress >= 1.0) {
+        this.stopTransformProgress = 1.0;
+        this.isTransformingToStop = false;
+        this.readingProgressSec = 0;
+      }
+    } else if (this.state === 'TRANSCRIBED') {
       this.readingProgressSec += dt;
       const totalCycle = this.totalSpeakingDuration + this.holdDuration;
       if (this.readingProgressSec > totalCycle) {
@@ -578,91 +634,70 @@ export class AsciiPixelEngine {
     const cellW = this.width / COLS;
     const cellH = this.height / ROWS;
 
-    // Dynamic, continuously morphing and circulating organic metaballs
+    // Pure rounded, continuously circulating liquid metaballs with high surface tension
     const blobs = [
-      // 1. Primary Macro Amoeba (Roams across the upper half in an organic Lissajous figure)
+      // 1. Primary Upper Sphere
       {
         x: this.width * (0.38 + 0.22 * Math.sin(t * 0.45) + 0.08 * Math.cos(t * 0.90)),
-        y: this.height * (0.22 + 0.12 * Math.cos(t * 0.38) + 0.06 * Math.sin(t * 0.85)),
-        rx: (88 + 16 * Math.sin(t * 0.60)) * swell,
-        ry: (70 + 14 * Math.cos(t * 0.52)) * swell,
-        angle: t * 0.32 + Math.sin(t * 0.65) * 0.45,
+        y: this.height * (0.24 + 0.12 * Math.cos(t * 0.38) + 0.05 * Math.sin(t * 0.85)),
+        r: (82 + 10 * Math.sin(t * 0.60)) * swell,
         power: 1.15 * (0.85 + pulseStrength * 0.35),
-        phase: 0.0,
         hasCore: true,
       },
-      // 2. Secondary Macro Amoeba (Roams across the lower half, undulating in counter-phase)
+      // 2. Primary Lower Sphere
       {
         x: this.width * (0.58 + 0.22 * Math.cos(t * 0.36 + 1.6) + 0.07 * Math.sin(t * 0.92)),
-        y: this.height * (0.62 + 0.16 * Math.sin(t * 0.42 + 0.9) + 0.05 * Math.cos(t * 0.78)),
-        rx: (90 + 18 * Math.cos(t * 0.48 + 2.1)) * swell,
-        ry: (72 + 16 * Math.sin(t * 0.58 + 1.2)) * swell,
-        angle: -t * 0.28 + Math.cos(t * 0.45) * 0.50,
+        y: this.height * (0.64 + 0.14 * Math.sin(t * 0.42 + 0.9) + 0.05 * Math.cos(t * 0.78)),
+        r: (84 + 10 * Math.cos(t * 0.48 + 2.1)) * swell,
         power: 1.12 * (0.85 + pulseStrength * 0.35),
-        phase: 2.1,
         hasCore: true,
       },
-      // 3. Fast Orbiting Droplet 1 (Slingshots across center, merging with macro amoebas and pinching off)
+      // 3. Fast Orbiting Droplet Sphere
       {
-        x: this.width * (0.48 + 0.34 * Math.sin(t * 0.72 + 2.5) + 0.06 * Math.cos(t * 1.5)),
-        y: this.height * (0.44 + 0.32 * Math.cos(t * 0.65 + 1.8) + 0.05 * Math.sin(t * 1.3)),
-        rx: (38 + 8 * Math.sin(t * 0.85)) * swell,
-        ry: (34 + 8 * Math.cos(t * 0.85)) * swell,
-        angle: t * 0.75,
+        x: this.width * (0.48 + 0.32 * Math.sin(t * 0.72 + 2.5)),
+        y: this.height * (0.44 + 0.30 * Math.cos(t * 0.65 + 1.8)),
+        r: (36 + 6 * Math.sin(t * 0.85)) * swell,
         power: 1.05 * (0.85 + pulseStrength * 0.35),
-        phase: 4.2,
         hasCore: false,
       },
-      // 4. Buoyant Bead (Mid-left buoyant bead, detaches and floats in negative space)
+      // 4. Buoyant Bead Sphere
       {
-        x: this.width * (0.22 + 0.16 * Math.cos(t * 0.80 + 3.8)),
-        y: this.height * (0.52 + 0.22 * Math.sin(t * 0.60 + 2.4)),
-        rx: (32 + 8 * Math.cos(t * 1.05)) * swell,
-        ry: (30 + 8 * Math.sin(t * 1.05)) * swell,
-        angle: t * 0.45,
+        x: this.width * (0.22 + 0.15 * Math.cos(t * 0.80 + 3.8)),
+        y: this.height * (0.52 + 0.20 * Math.sin(t * 0.60 + 2.4)),
+        r: (30 + 5 * Math.cos(t * 1.05)) * swell,
         power: 1.02 * (0.85 + pulseStrength * 0.35),
-        phase: 1.5,
         hasCore: false,
       },
-      // 5. Dynamic Perimeter Surge (Top-Right edge tide influx)
+      // 5. Dynamic Upper-Right Influx Sphere
       {
-        x: this.width * (0.90 + 0.09 * Math.sin(t * 0.48 + 1.0)),
-        y: this.height * (0.16 + 0.14 * Math.cos(t * 0.58 + 3.2)),
-        rx: (72 + 14 * Math.sin(t * 0.68)) * swell,
-        ry: (78 + 16 * Math.cos(t * 0.52)) * swell,
-        angle: Math.sin(t * 0.38) * 0.35,
+        x: this.width * (0.88 + 0.08 * Math.sin(t * 0.48 + 1.0)),
+        y: this.height * (0.16 + 0.12 * Math.cos(t * 0.58 + 3.2)),
+        r: (72 + 10 * Math.sin(t * 0.68)) * swell,
         power: 1.05 * (0.85 + pulseStrength * 0.35),
-        phase: 3.3,
         hasCore: true,
       },
-      // 6. Dynamic Perimeter Peninsula (Bottom-Left shoreline anchor)
+      // 6. Dynamic Bottom-Left Peninsula Sphere
       {
-        x: this.width * (0.12 + 0.10 * Math.cos(t * 0.52 + 4.6)),
-        y: this.height * (0.86 + 0.08 * Math.sin(t * 0.44 + 1.4)),
-        rx: (78 + 14 * Math.cos(t * 0.56)) * swell,
-        ry: (68 + 14 * Math.sin(t * 0.62)) * swell,
-        angle: Math.cos(t * 0.32) * 0.30,
+        x: this.width * (0.14 + 0.09 * Math.cos(t * 0.52 + 4.6)),
+        y: this.height * (0.84 + 0.08 * Math.sin(t * 0.44 + 1.4)),
+        r: (75 + 10 * Math.cos(t * 0.56)) * swell,
         power: 1.06 * (0.85 + pulseStrength * 0.35),
-        phase: 5.1,
         hasCore: true,
       },
-      // 7. Dynamic Lower Satellite (Drifts smoothly along bottom channel)
+      // 7. Dynamic Lower Satellite Sphere
       {
-        x: this.width * (0.52 + 0.20 * Math.sin(t * 0.58 + 5.2)),
-        y: this.height * (0.88 + 0.08 * Math.cos(t * 0.68 + 4.2)),
-        rx: (60 + 12 * Math.sin(t * 0.75)) * swell,
-        ry: (54 + 10 * Math.cos(t * 0.75)) * swell,
-        angle: t * 0.22,
+        x: this.width * (0.52 + 0.18 * Math.sin(t * 0.58 + 5.2)),
+        y: this.height * (0.88 + 0.07 * Math.cos(t * 0.68 + 4.2)),
+        r: (56 + 8 * Math.sin(t * 0.75)) * swell,
         power: 0.98 * (0.85 + pulseStrength * 0.35),
-        phase: 2.8,
         hasCore: false,
       },
     ];
 
-    // 1. Monochromatic Volumetric Core Underglow (pulsing bloom)
+    // 1. Monochromatic Volumetric Core Underglow (pure circular gradient)
     for (const b of blobs) {
       if (!b.hasCore) continue;
-      const gradRadius = Math.max(b.rx, b.ry) * 0.90;
+      const gradRadius = b.r * 0.90;
       const grad = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, gradRadius);
       const glowIntensity = 0.14 + pulseStrength * 0.30;
       if (isWhite) {
@@ -680,7 +715,7 @@ export class AsciiPixelEngine {
       ctx.fill();
     }
 
-    // 2. 2D Halftone Dot Grid Sampling with Rotated Elliptical Local Frames & Amoebic Waves
+    // 2. 2D Halftone Dot Grid Sampling with Pure Spherical Meniscus Falloff
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         const cx = c * cellW + cellW / 2;
@@ -690,33 +725,22 @@ export class AsciiPixelEngine {
 
         // Fluid wave noise & eddy currents that dynamically swirl
         const turbulence =
-          Math.sin(nx * 4.5 + ny * 4.0 + t * 1.2) * 0.11 +
-          Math.cos(nx * 6.0 - ny * 5.5 - t * 1.0) * 0.08 +
-          Math.sin((nx + ny) * 6.5 + t * 1.6) * 0.05;
+          Math.sin(nx * 4.2 + ny * 3.8 + t * 1.1) * 0.09 +
+          Math.cos(nx * 5.5 - ny * 5.0 - t * 0.9) * 0.07;
 
         // Acoustic voice shockwave ripples radiating through fluid
         const centerDist = Math.hypot(nx - 0.50, ny - 0.45);
-        const acousticRipples = Math.sin(centerDist * 16.0 - t * 12.0) * (pulseStrength * 0.16);
+        const acousticRipples = Math.sin(centerDist * 16.0 - t * 12.0) * (pulseStrength * 0.15);
 
-        // Sum metaball potentials in local rotated frames with amoebic boundary waves
+        // Sum pure rounded circular potentials (zero polygonal distortion)
         let potential = 0;
         for (const b of blobs) {
           const dx = cx - b.x;
           const dy = cy - b.y;
+          const distSq = (dx * dx + dy * dy) / (b.r * b.r);
 
-          const cosA = Math.cos(b.angle);
-          const sinA = Math.sin(b.angle);
-          const localX = (dx * cosA + dy * sinA) / b.rx;
-          const localY = (-dx * sinA + dy * cosA) / b.ry;
-
-          // Multi-harmonic amoebic boundary wave (3-lobe and 5-lobe undulating surface ripples)
-          const angle = Math.atan2(localY, localX);
-          const borderRipple = 1.0 + 0.13 * Math.sin(angle * 3.0 + t * 2.0 + b.phase)
-                                   + 0.08 * Math.cos(angle * 5.0 - t * 1.7 + b.phase * 1.4);
-
-          const distSq = (localX * localX + localY * localY) / (borderRipple * borderRipple);
-          if (distSq < 2.3) {
-            potential += b.power * Math.exp(-distSq * 1.75);
+          if (distSq < 2.2) {
+            potential += b.power * Math.exp(-distSq * 1.80);
           }
         }
 
@@ -823,126 +847,198 @@ export class AsciiPixelEngine {
       }
     }
 
-    // 2. STATE 3: SPOTIFY LYRICS UI & KARAOKE ILLUMINATION
+    // 2. STATE 3: SPOTIFY LYRICS UI & DISPERSE-TRANSFORM KINETICS
     if (this.state === 'TRANSCRIBED') {
       ctx.save();
-      
-      // Top Header: "Mon ●" + Date
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'middle';
 
-      // "Mon" Display
-      ctx.font = '700 22px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
-      ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
-      ctx.globalAlpha = 1.0;
-      ctx.fillText('Mon', 20, 36);
-
-      // Coral Dot
-      ctx.fillStyle = '#EF4444';
-      ctx.font = '700 12px monospace';
-      ctx.fillText('●', 78, 36);
-
-      // Date right aligned
-      ctx.textAlign = 'right';
-      ctx.font = '500 10px "JetBrains Mono", monospace';
-      ctx.fillStyle = isWhite ? '#71717A' : '#8E8E93';
-      ctx.globalAlpha = 0.85;
-      ctx.fillText('December 9', this.width - 20, 32);
-      ctx.fillStyle = isWhite ? '#A1A1AA' : '#686872';
-      ctx.fillText('2024', this.width - 20, 44);
-
-      // Hairline rule below header
-      ctx.strokeStyle = isWhite ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(20, 58);
-      ctx.lineTo(this.width - 20, 58);
-      ctx.stroke();
-
-      // Paragraph Formatted Reading UI: Letter-by-Letter Acoustic Lighting
+      // Check if layout is ready
       if (!this.isCharLayoutReady) {
         this.layoutMemoChars(ctx);
       }
 
-      const t = this.readingProgressSec;
+      const progress = this.stopTransformProgress;
+      const isTransforming = this.isTransformingToStop;
+      const headerAlpha = isTransforming ? Math.max(0, (progress - 0.65) / 0.35) : 1.0;
+
+      // 1. Residual halftone dots dissolving in Phase 1
+      if (isTransforming && progress < 0.38) {
+        const dissolve = 1.0 - progress / 0.38;
+        ctx.fillStyle = isWhite ? '#71717A' : '#FFFFFF';
+        ctx.globalAlpha = dissolve * 0.30;
+        for (let i = 0; i < 60; i++) {
+          const gx = (i * 37) % this.width;
+          const gy = (i * 59) % this.height;
+          ctx.fillRect(gx, gy, 2, 2);
+        }
+      }
+
+      // 2. Top Header: "Mon ●" + Date (fades in as words assemble)
+      if (headerAlpha > 0.01) {
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+
+        // "Mon" Display
+        ctx.font = '700 22px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
+        ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
+        ctx.globalAlpha = headerAlpha;
+        ctx.fillText('Mon', 20, 36);
+
+        // Coral Dot
+        ctx.fillStyle = '#EF4444';
+        ctx.font = '700 12px monospace';
+        ctx.fillText('●', 78, 36);
+
+        // Date right aligned
+        ctx.textAlign = 'right';
+        ctx.font = '500 10px "JetBrains Mono", monospace';
+        ctx.fillStyle = isWhite ? '#71717A' : '#8E8E93';
+        ctx.globalAlpha = headerAlpha * 0.85;
+        ctx.fillText('December 9', this.width - 20, 32);
+        ctx.fillStyle = isWhite ? '#A1A1AA' : '#686872';
+        ctx.fillText('2024', this.width - 20, 44);
+
+        // Hairline rule below header
+        ctx.strokeStyle = isWhite ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(20, 58);
+        ctx.lineTo(this.width - 20, 58);
+        ctx.stroke();
+      }
+
+      // 3. Characters Rendering: Transformation vs Continuous Reading
       ctx.font = '600 19px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
 
-      for (let i = 0; i < this.memoChars.length; i++) {
-        const mc = this.memoChars[i];
-        if (mc.char === ' ') continue;
+      if (isTransforming) {
+        // DISPERSE & TRANSFORM KINETIC CHOREOGRAPHY
+        const ASCII_SCRAMBLE = ['·', '+', '■', '░', '*', '▒', '▪', '#'];
 
-        ctx.save();
-        if (t >= mc.tEnd) {
-          // 1. Spoken / Already read: clean, solid, legible chalk white
-          ctx.fillStyle = isWhite ? '#18181B' : '#E4E4E7';
-          ctx.globalAlpha = mc.isAccent ? 1.0 : 0.85;
-          ctx.shadowBlur = 0;
-        } else if (t >= mc.tStart) {
-          // 2. Currently being spoken / ignited: radiant blooming halation
-          const progressInChar = (t - mc.tStart) / Math.max(0.001, mc.tEnd - mc.tStart);
-          ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
-          ctx.globalAlpha = 1.0;
-          if (!isWhite) {
-            ctx.shadowColor = mc.isAccent
-              ? 'rgba(255, 255, 255, 0.85)'
-              : 'rgba(255, 255, 255, 0.60)';
-            ctx.shadowBlur = Math.round(10 + Math.sin(progressInChar * Math.PI) * 8);
-          }
-        } else {
-          // 3. Not yet spoken: soft graphite grey with gentle pre-warm
-          const dtUntilStart = mc.tStart - t;
-          if (dtUntilStart < 0.08) {
-            const pre = (0.08 - dtUntilStart) / 0.08;
-            ctx.globalAlpha = 0.20 + pre * 0.16;
+        for (let i = 0; i < this.memoChars.length; i++) {
+          const mc = this.memoChars[i];
+          if (mc.char === ' ') continue;
+
+          const stagger = mc.stagger || 0;
+          const effP = Math.max(0, Math.min(1.0, (progress - stagger) / (1.0 - stagger)));
+
+          let curX: number, curY: number, alpha: number, displayChar: string;
+
+          if (effP < 0.32) {
+            // Phase 1: Disperse outward from seed blob to scatter
+            const p1 = effP / 0.32;
+            const ease1 = 1 - Math.pow(1 - p1, 2);
+            const seedX = mc.seedX ?? (this.width / 2);
+            const seedY = mc.seedY ?? (this.height / 2);
+            const scatterX = mc.scatterX ?? mc.charX;
+            const scatterY = mc.scatterY ?? mc.charY;
+            curX = seedX + (scatterX - seedX) * ease1;
+            curY = seedY + (scatterY - seedY) * ease1;
+            alpha = 0.5 + p1 * 0.5;
+            displayChar = ASCII_SCRAMBLE[(i + Math.floor(progress * 28)) % ASCII_SCRAMBLE.length];
           } else {
-            ctx.globalAlpha = 0.20;
-          }
-          ctx.fillStyle = isWhite ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.20)';
-          ctx.shadowBlur = 0;
-        }
+            // Phase 2: Converge and transform into word position
+            const p2 = (effP - 0.32) / 0.68;
+            const ease2 = 1 - Math.pow(1 - p2, 3);
+            const scatterX = mc.scatterX ?? mc.charX;
+            const scatterY = mc.scatterY ?? mc.charY;
+            curX = scatterX + (mc.charX - scatterX) * ease2;
+            curY = scatterY + (mc.charY - scatterY) * ease2;
+            alpha = 0.75 + p2 * 0.25;
 
-        ctx.fillText(mc.char, mc.charX, mc.charY);
-        ctx.restore();
+            if (p2 > 0.65) {
+              displayChar = mc.char;
+            } else {
+              displayChar = (p2 > 0.38 && (i % 2 === 0))
+                ? mc.char
+                : ASCII_SCRAMBLE[(i + Math.floor(progress * 18)) % ASCII_SCRAMBLE.length];
+            }
+          }
+
+          ctx.fillStyle = isWhite ? '#000000' : (progress > 0.85 ? '#E4E4E7' : '#FFFFFF');
+          ctx.globalAlpha = alpha;
+          ctx.fillText(displayChar, curX, curY);
+        }
+      } else {
+        // NORMAL LETTER-BY-LETTER KARAOKE READING
+        const t = this.readingProgressSec;
+        for (let i = 0; i < this.memoChars.length; i++) {
+          const mc = this.memoChars[i];
+          if (mc.char === ' ') continue;
+
+          ctx.save();
+          if (t >= mc.tEnd) {
+            // 1. Spoken / Already read: clean, solid, legible chalk white
+            ctx.fillStyle = isWhite ? '#18181B' : '#E4E4E7';
+            ctx.globalAlpha = mc.isAccent ? 1.0 : 0.85;
+            ctx.shadowBlur = 0;
+          } else if (t >= mc.tStart) {
+            // 2. Currently being spoken / ignited: radiant blooming halation
+            const progressInChar = (t - mc.tStart) / Math.max(0.001, mc.tEnd - mc.tStart);
+            ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
+            ctx.globalAlpha = 1.0;
+            if (!isWhite) {
+              ctx.shadowColor = mc.isAccent
+                ? 'rgba(255, 255, 255, 0.85)'
+                : 'rgba(255, 255, 255, 0.60)';
+              ctx.shadowBlur = Math.round(10 + Math.sin(progressInChar * Math.PI) * 8);
+            }
+          } else {
+            // 3. Not yet spoken: soft graphite grey with gentle pre-warm
+            const dtUntilStart = mc.tStart - t;
+            if (dtUntilStart < 0.08) {
+              const pre = (0.08 - dtUntilStart) / 0.08;
+              ctx.globalAlpha = 0.20 + pre * 0.16;
+            } else {
+              ctx.globalAlpha = 0.20;
+            }
+            ctx.fillStyle = isWhite ? 'rgba(0, 0, 0, 0.28)' : 'rgba(255, 255, 255, 0.20)';
+            ctx.shadowBlur = 0;
+          }
+
+          ctx.fillText(mc.char, mc.charX, mc.charY);
+          ctx.restore();
+        }
       }
 
-      // Footer Stats Row (Without Icons)
-      ctx.strokeStyle = isWhite ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(20, 460);
-      ctx.lineTo(this.width - 20, 460);
-      ctx.stroke();
+      // 4. Footer Stats Row (Without Icons - fades in with header)
+      if (headerAlpha > 0.01) {
+        ctx.strokeStyle = isWhite ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(20, 460);
+        ctx.lineTo(this.width - 20, 460);
+        ctx.stroke();
 
-      ctx.textAlign = 'left';
-      ctx.font = '600 10px "JetBrains Mono", monospace';
-      ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.font = '600 10px "JetBrains Mono", monospace';
+        ctx.textBaseline = 'middle';
 
-      const footerY = 482;
-      // 4.7K steps
-      ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
-      ctx.globalAlpha = 0.95;
-      ctx.fillText('4.7K', 20, footerY);
-      ctx.fillStyle = isWhite ? '#71717A' : '#72727A';
-      ctx.globalAlpha = 0.75;
-      ctx.fillText(' steps', 50, footerY);
+        const footerY = 482;
+        // 4.7K steps
+        ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
+        ctx.globalAlpha = headerAlpha * 0.95;
+        ctx.fillText('4.7K', 20, footerY);
+        ctx.fillStyle = isWhite ? '#71717A' : '#72727A';
+        ctx.globalAlpha = headerAlpha * 0.75;
+        ctx.fillText(' steps', 50, footerY);
 
-      // 6:37 hours
-      ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
-      ctx.globalAlpha = 0.95;
-      ctx.fillText('6:37', 140, footerY);
-      ctx.fillStyle = isWhite ? '#71717A' : '#72727A';
-      ctx.globalAlpha = 0.75;
-      ctx.fillText(' hours', 170, footerY);
+        // 6:37 hours
+        ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
+        ctx.globalAlpha = headerAlpha * 0.95;
+        ctx.fillText('6:37', 140, footerY);
+        ctx.fillStyle = isWhite ? '#71717A' : '#72727A';
+        ctx.globalAlpha = headerAlpha * 0.75;
+        ctx.fillText(' hours', 170, footerY);
 
-      // 36 mins
-      ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
-      ctx.globalAlpha = 0.95;
-      ctx.fillText('36', 255, footerY);
-      ctx.fillStyle = isWhite ? '#71717A' : '#72727A';
-      ctx.globalAlpha = 0.75;
-      ctx.fillText(' mins', 273, footerY);
+        // 36 mins
+        ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
+        ctx.globalAlpha = headerAlpha * 0.95;
+        ctx.fillText('36', 255, footerY);
+        ctx.fillStyle = isWhite ? '#71717A' : '#72727A';
+        ctx.globalAlpha = headerAlpha * 0.75;
+        ctx.fillText(' mins', 273, footerY);
+      }
 
       ctx.restore();
     }
