@@ -83,14 +83,6 @@
   box-shadow: 0 0 18px 2px rgba(255, 255, 255, 0.22), 0 2px 6px rgba(0, 0, 0, 0.4);
 }
 
-/* Rec Active Key (Solid Red with Halation) */
-.carbon-key-active-rec {
-  background-color: #EF4444;
-  border: 1px solid #F87171;
-  color: #FFFFFF;
-  box-shadow: 0 0 18px 2px rgba(239, 68, 68, 0.4), 0 2px 6px rgba(0, 0, 0, 0.4);
-}
-
 /* Hairline Wireframe Guide Grid */
 .technical-grid {
   background-image: 

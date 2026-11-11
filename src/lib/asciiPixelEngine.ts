@@ -68,7 +68,9 @@ export interface ContinuousTransitionPixel {
   char: string;
   isAccent: boolean;
   radius: number;
-  stagger: number;
+  lineIndex: number;
+  charIndexInLine: number;
+  lineTotalChars: number;
   color?: string;
 }
 
@@ -191,13 +193,20 @@ export class AsciiPixelEngine {
 
   public transitionProgress: number = 1.0;
   public prevState: AppState = 'IDLE';
+  public isRecordingPaused: boolean = false;
   public isTransformingToStop: boolean = false;
   public stopTransformProgress: number = 0;
+  public onTranscribeComplete?: () => void;
+  public onPlaybackComplete?: () => void;
   public continuousTransitionPixels: ContinuousTransitionPixel[] = [];
 
   public isEjecting: boolean = false;
   public ejectVelocity: number = 0;
   public onEjectComplete?: () => void;
+
+  public setRecordingPaused(paused: boolean) {
+    this.isRecordingPaused = paused;
+  }
 
   constructor() {
     this.sampler = new BitmapSampler();
@@ -272,9 +281,11 @@ export class AsciiPixelEngine {
       this.ejectVelocity = 0;
 
       if (prev === 'RECORDING' && nextState === 'TRANSCRIBED') {
-        this.triggerStopTransition();
+        this.triggerTranscribeTransition();
       } else if (nextState === 'TRANSCRIBED') {
         this.isTransformingToStop = false;
+        this.readingProgressSec = 0;
+      } else if (nextState === 'PLAYING') {
         this.readingProgressSec = 0;
       }
     }
@@ -358,13 +369,14 @@ export class AsciiPixelEngine {
   }
 
   /**
-   * Triggers seamless continuous pixel dispersion of record mode elements
-   * and uninterrupted aerodynamic flocking into the words of stop mode without pausing.
+   * Triggers cascading line-by-line transcription transformation:
+   * Disperses record mode elements and flocks them sequentially from Line 0 to Line 4 to simulate live AI transcription.
    */
-  public triggerStopTransition() {
+  public triggerTranscribeTransition(onComplete?: () => void) {
     this.isTransformingToStop = true;
     this.stopTransformProgress = 0.0;
     this.readingProgressSec = 0.0;
+    this.onTranscribeComplete = onComplete;
     this.continuousTransitionPixels = [];
 
     // Ensure layout coordinates are ready
@@ -403,17 +415,17 @@ export class AsciiPixelEngine {
       const p3x = target.charX;
       const p3y = target.charY;
 
-      // P1: Outward burst apex along dispersion vector (Zero Pause!)
+      // P1: Outward burst apex along dispersion vector
       const angle = Math.atan2(dot.dirY, dot.dirX) + ((i % 5) - 2) * 0.22;
-      const burstDist = 45 + (i * 11) % 36;
+      const burstDist = 42 + (i * 11) % 36;
       const p1x = p0x + Math.cos(angle) * burstDist;
       const p1y = p0y + Math.sin(angle) * burstDist;
 
-      // P2: Aerodynamic inflow control point smoothly curving into row
+      // P2: Aerodynamic inflow control point smoothly curving into line
       const p2x = p1x + (p3x - p1x) * 0.50 + Math.sin(i * 1.3) * 12;
       const p2y = p1y + (p3y - p1y) * 0.74;
 
-      const stagger = (i % 24) * 0.0035;
+      const lineCharsCount = this.memoChars.filter(c => c.lineIndex === target.lineIndex && c.char !== ' ').length;
 
       this.continuousTransitionPixels.push({
         p0x,
@@ -427,7 +439,9 @@ export class AsciiPixelEngine {
         char: target.char,
         isAccent: target.isAccent,
         radius: dot.r,
-        stagger,
+        lineIndex: target.lineIndex,
+        charIndexInLine: target.charIndexInLine,
+        lineTotalChars: Math.max(1, lineCharsCount),
       });
     }
   }
@@ -488,35 +502,44 @@ export class AsciiPixelEngine {
     this.currentTimeSec = timeSec;
     this.currentAudioEnergy = audioEnergy;
 
-    // Advance dynamic fluid flow phase with voice-reactive acceleration
-    const clampedAudio = Math.max(0.001, Math.min(1.0, audioEnergy));
+    // Advance dynamic fluid flow phase with voice-reactive acceleration (or calm resting drift when paused)
+    const effectiveEnergy = this.isRecordingPaused ? 0.001 : audioEnergy;
+    this.currentAudioEnergy += (effectiveEnergy - this.currentAudioEnergy) * 0.25;
+    const clampedAudio = Math.max(0.001, Math.min(1.0, this.currentAudioEnergy));
     const audioDbfs = 20 * Math.log10(clampedAudio);
     const audioPulse = Math.max(0, Math.min(1.0, (audioDbfs + 42) / 38));
-    const flowVelocity = 0.80 + audioPulse * 0.45;
+    const flowVelocity = this.isRecordingPaused ? 0.12 : (0.80 + audioPulse * 0.45);
     this.fluidFlowPhase += dt * flowVelocity;
 
     const isWhite = this.theme === 'WHITE';
     const primaryColor = isWhite ? '#000000' : '#FFFFFF';
     const mutedColor = isWhite ? '#71717A' : '#72727A';
-    const accentColor = isWhite ? '#000000' : '#EF4444';
+    const accentColor = isWhite ? '#000000' : '#FFFFFF'; // Strict Monochrome: no red
 
     this.spokeAngle += 0.08;
     this.playheadCol = (Math.sin(timeSec * 2.2) * 0.5 + 0.5) * (BITMAP_COLS - 1);
 
-    // Transformation from Recording to Stop mode or continuous karaoke reading
+    // Cascading line-by-line transformation during transcription
     if (this.isTransformingToStop) {
-      // 1.30s cinematic continuous Bezier flocking and seamless typographic transformation (zero pause)
-      this.stopTransformProgress += dt / 1.30;
+      // 2.8s authentic AI live-transcription simulation cascading line by line
+      this.stopTransformProgress += dt / 2.8;
       if (this.stopTransformProgress >= 1.0) {
         this.stopTransformProgress = 1.0;
         this.isTransformingToStop = false;
         this.readingProgressSec = 0;
+        if (this.onTranscribeComplete) {
+          this.onTranscribeComplete();
+        }
       }
-    } else if (this.state === 'TRANSCRIBED') {
+    } else if (this.state === 'PLAYING') {
+      // Play mode: advances Spotify lyrics reading timeline
       this.readingProgressSec += dt;
-      const totalCycle = this.totalSpeakingDuration + this.holdDuration;
-      if (this.readingProgressSec > totalCycle) {
+      if (this.readingProgressSec > this.totalSpeakingDuration + 1.2) {
         this.readingProgressSec = 0;
+        this.setState('TRANSCRIBED');
+        if (this.onPlaybackComplete) {
+          this.onPlaybackComplete();
+        }
       }
     }
 
@@ -555,11 +578,8 @@ export class AsciiPixelEngine {
       return;
     }
 
-    // =========================================================================
-    // STATE 2: RECORDING (Halftone Fluid Organic Blob Field)
-    // Swarm particles rest in background ready for state transitions
-    // =========================================================================
-    if (this.state === 'RECORDING') {
+    // Swarm particles rest in background ready for state transitions (synth wave removed)
+    if (this.state === 'RECORDING' || this.state === 'TRANSCRIBED' || this.state === 'PLAYING') {
       for (let i = 0; i < this.particles.length; i++) {
         const p = this.particles[i];
         p.targetX = p.baseX;
@@ -568,107 +588,6 @@ export class AsciiPixelEngine {
         p.x += (p.targetX - p.x) * 0.15;
         p.y += (p.targetY - p.y) * 0.15;
         p.alpha += (0 - p.alpha) * 0.15;
-      }
-      return;
-    }
-
-    // =========================================================================
-    // STATE 4: PLAYING (Full-Width Synth Wave + Sweeping Player Line)
-    // =========================================================================
-    if (this.state === 'PLAYING') {
-      for (let i = 0; i < this.particles.length; i++) {
-        const p = this.particles[i];
-        const c = p.col;
-        const r = p.row;
-
-        p.targetX = p.baseX;
-        p.targetY = p.baseY;
-
-        const waveY =
-          40 +
-          Math.sin(c * 0.16 + timeSec * 4.0) * 12 +
-          Math.sin(c * 0.34 - timeSec * 2.8) * 6 +
-          Math.cos(c * 0.08 + timeSec * 1.6) * 4;
-
-        const dist = Math.abs(r - waveY);
-        const isPlayhead = Math.abs(c - this.playheadCol) < 1.2;
-
-        if (dist <= 8) {
-          const lum = Math.max(0, 1 - dist / 8.5);
-          const dithered = applyBayerDither(lum, c, r, 0.2);
-
-          if (isPlayhead) {
-            p.char = '█';
-            p.color = '#FFFFFF';
-            p.targetAlpha = 1.0;
-          } else if (dithered > 0.8) {
-            p.char = '█';
-            p.color = primaryColor;
-            p.targetAlpha = 1.0;
-          } else if (dithered > 0.6) {
-            p.char = '■';
-            p.color = primaryColor;
-            p.targetAlpha = 0.95;
-          } else if (dithered > 0.42) {
-            p.char = '▪';
-            p.color = primaryColor;
-            p.targetAlpha = 0.85;
-          } else if (dithered > 0.26) {
-            p.char = '+';
-            p.color = isWhite ? '#52525B' : mutedColor;
-            p.targetAlpha = 0.65;
-          } else if (dithered > 0.12) {
-            p.char = ':';
-            p.color = isWhite ? '#71717A' : mutedColor;
-            p.targetAlpha = 0.45;
-          } else {
-            p.char = '·';
-            p.color = isWhite ? '#A1A1AA' : mutedColor;
-            p.targetAlpha = 0.25;
-          }
-        } else {
-          // Subtle stippled background outside the synth wave
-          const bgDither = applyBayerDither(0.04, c, r, 0.15);
-          if (bgDither > 0.1) {
-            p.char = '.';
-            p.color = isWhite ? '#D4D4D8' : '#27272A';
-            p.targetAlpha = 0.18;
-          } else {
-            p.char = ' ';
-            p.targetAlpha = 0.0;
-          }
-        }
-
-        p.x += (p.targetX - p.x) * 0.22;
-        p.y += (p.targetY - p.y) * 0.22;
-        p.alpha += (p.targetAlpha - p.alpha) * 0.2;
-      }
-      return;
-    }
-
-    // =========================================================================
-    // STATE 3 (STOP/TRANSCRIBED): Ambient Background ASCII Constellation
-    // =========================================================================
-    if (this.state === 'TRANSCRIBED') {
-      for (let i = 0; i < this.particles.length; i++) {
-        const p = this.particles[i];
-        p.isAssigned = false;
-        p.isAccent = false;
-
-        const curlX = Math.sin(timeSec * 0.5 + p.id * 0.1) * 8;
-        const curlY = Math.cos(timeSec * 0.4 + p.id * 0.08) * 6;
-
-        p.targetX = p.baseX + curlX;
-        p.targetY = p.baseY + curlY;
-
-        const idleIdx = Math.floor(timeSec * 1.2 + p.id * 0.08) % IDLE_GLYPHS.length;
-        p.char = IDLE_GLYPHS[idleIdx];
-        p.color = isWhite ? '#D4D4D8' : '#272730';
-        p.targetAlpha = 0.12 + Math.sin(timeSec * 1.5 + p.id * 0.2) * 0.06;
-
-        p.x += (p.targetX - p.x) * 0.15;
-        p.y += (p.targetY - p.y) * 0.15;
-        p.alpha += (p.targetAlpha - p.alpha) * 0.15;
       }
       return;
     }
@@ -699,7 +618,7 @@ export class AsciiPixelEngine {
         p.char = target.char;
 
         if (target.isAccent) {
-          p.color = '#EF4444';
+          p.color = '#FFFFFF';
           p.targetAlpha = 1.0;
         } else if (target.lum > 0.8) {
           p.color = primaryColor;
@@ -986,8 +905,8 @@ export class AsciiPixelEngine {
       }
     }
 
-    // 2. STATE 3: SPOTIFY LYRICS UI & DISPERSE-TRANSFORM KINETICS
-    if (this.state === 'TRANSCRIBED') {
+    // 2. STATE 3 & 4: TRANSCRIBED MEMO & PLAYING SPOTIFY LYRICS KINETICS
+    if (this.state === 'TRANSCRIBED' || this.state === 'PLAYING') {
       ctx.save();
 
       // Check if layout is ready
@@ -999,7 +918,7 @@ export class AsciiPixelEngine {
       const isTransforming = this.isTransformingToStop;
       const headerAlpha = isTransforming ? Math.max(0, (progress - 0.70) / 0.30) : 1.0;
 
-      // 1. Top Header: "Mon ●" + Date (fades in as words assemble)
+      // 1. Top Header: "Mon ●" + Date (Strict Monochrome: Black, White, Glowing White)
       if (headerAlpha > 0.01) {
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
@@ -1010,10 +929,15 @@ export class AsciiPixelEngine {
         ctx.globalAlpha = headerAlpha;
         ctx.fillText('Mon', 20, 36);
 
-        // Coral Dot
-        ctx.fillStyle = '#EF4444';
+        // Minimalist White Dot (Strict Monochrome: Zero Red)
+        ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
         ctx.font = '700 12px monospace';
+        if (!isWhite) {
+          ctx.shadowColor = 'rgba(255, 255, 255, 0.85)';
+          ctx.shadowBlur = 6;
+        }
         ctx.fillText('●', 78, 36);
+        ctx.shadowBlur = 0;
 
         // Date right aligned
         ctx.textAlign = 'right';
@@ -1025,7 +949,7 @@ export class AsciiPixelEngine {
         ctx.fillText('2024', this.width - 20, 44);
 
         // Hairline rule below header
-        ctx.strokeStyle = isWhite ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)';
+        ctx.strokeStyle = isWhite ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.10)';
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(20, 58);
@@ -1033,47 +957,68 @@ export class AsciiPixelEngine {
         ctx.stroke();
       }
 
-      // 2. Characters Rendering: Zero-Pause Continuous Bezier Flocking vs Karaoke
+      // 2. Characters Rendering: Cascading Transcription vs Solid Transcribed vs Play Karaoke
       ctx.font = '600 19px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
 
       if (isTransforming) {
-        // CONTINUOUS UNINTERRUPTED FLOCKING (Zero Pause, Single Continuous Bezier Curve)
-        // Every pixel that dispersed from the record mode blob flows seamlessly into its word destination without any pause.
+        // CASCADING LINE-BY-LINE TRANSCRIPTION TRANSFORMATION
+        // Pixels transform smoothly from the first line to the last line to simulate live transcription.
+        const TOTAL_LINES = 5;
+
         for (let i = 0; i < this.continuousTransitionPixels.length; i++) {
           const tp = this.continuousTransitionPixels[i];
-          const stagger = tp.stagger || 0;
-          const effP = Math.max(0, Math.min(1.0, (progress - stagger) / (1.0 - stagger)));
 
-          // Smooth cubic ease-in-out: starts with burst momentum, glides without pausing, settles softly
-          const t = effP < 0.5 ? 4 * effP * effP * effP : 1 - Math.pow(-2 * effP + 2, 3) / 2;
-          const it = 1 - t;
+          // Cascading timeline per line (Line 0 through Line 4)
+          const lineStartP = (tp.lineIndex / TOTAL_LINES) * 0.62;
+          const lineDuration = 0.38;
+          const charRipple = (tp.charIndexInLine / tp.lineTotalChars) * 0.05;
+          const startP = lineStartP + charRipple;
+          const endP = startP + lineDuration;
 
-          // Pure Cubic Bezier evaluation (Zero Pause!)
-          const curX = it * it * it * tp.p0x + 3 * it * it * t * tp.p1x + 3 * it * t * t * tp.p2x + t * t * t * tp.p3x;
-          const curY = it * it * it * tp.p0y + 3 * it * it * t * tp.p1y + 3 * it * t * t * tp.p2y + t * t * t * tp.p3y;
-
+          let curX: number, curY: number;
           let pixelAlpha = 1.0;
           let glyphAlpha = 0.0;
           let pixelSize = Math.max(2.0, tp.radius * 1.85);
 
-          if (effP < 0.72) {
-            // In flight: pure glowing hardware pixel
-            pixelAlpha = 0.95;
-            pixelSize = Math.max(1.8, tp.radius * 1.85 * (1.0 - effP * 0.20));
+          if (progress < startP) {
+            // Waiting to be transcribed: gently hovering in the record dispersion cloud
+            const hover = Math.sin(this.currentTimeSec * 3 + i * 0.35) * 2;
+            curX = tp.p0x + hover;
+            curY = tp.p0y + Math.cos(this.currentTimeSec * 3 + i * 0.35) * 2;
+            pixelAlpha = 0.85;
             glyphAlpha = 0.0;
+          } else if (progress < endP) {
+            // Actively transcribing line: Bezier streamline flight into position
+            const effP = (progress - startP) / (endP - startP);
+            const t = effP < 0.5 ? 4 * effP * effP * effP : 1 - Math.pow(-2 * effP + 2, 3) / 2;
+            const it = 1 - t;
+
+            curX = it * it * it * tp.p0x + 3 * it * it * t * tp.p1x + 3 * it * t * t * tp.p2x + t * t * t * tp.p3x;
+            curY = it * it * it * tp.p0y + 3 * it * it * t * tp.p1y + 3 * it * t * t * tp.p2y + t * t * t * tp.p3y;
+
+            if (effP < 0.72) {
+              pixelAlpha = 0.95;
+              pixelSize = Math.max(1.8, tp.radius * 1.85 * (1.0 - effP * 0.20));
+              glyphAlpha = 0.0;
+            } else {
+              const morphT = (effP - 0.72) / 0.28;
+              pixelAlpha = Math.max(0, 1.0 - morphT * 1.4);
+              glyphAlpha = Math.min(1.0, morphT * 1.25);
+              pixelSize = Math.max(1.0, tp.radius * 1.85 * (1.0 - morphT));
+            }
           } else {
-            // Arriving at word slot: seamless cross-fade from pixel to letter
-            const morphT = (effP - 0.72) / 0.28;
-            pixelAlpha = Math.max(0, 1.0 - morphT * 1.4);
-            glyphAlpha = Math.min(1.0, morphT * 1.25);
-            pixelSize = Math.max(1.0, tp.radius * 1.85 * (1.0 - morphT));
+            // Line transcription complete: locked in place as solid text
+            curX = tp.p3x;
+            curY = tp.p3y;
+            pixelAlpha = 0.0;
+            glyphAlpha = 1.0;
           }
 
-          // 1. Draw pure glowing pixel
+          // 1. Draw glowing hardware pixel (strictly white)
           if (pixelAlpha > 0.01) {
-            ctx.fillStyle = tp.isAccent ? '#EF4444' : (isWhite ? '#18181B' : '#FFFFFF');
+            ctx.fillStyle = isWhite ? '#18181B' : '#FFFFFF';
             ctx.globalAlpha = pixelAlpha;
             ctx.beginPath();
             const corner = pixelSize * 0.34;
@@ -1081,15 +1026,26 @@ export class AsciiPixelEngine {
             ctx.fill();
           }
 
-          // 2. Draw solidified character as it locks into position
+          // 2. Draw solidified typographic character
           if (glyphAlpha > 0.01 && tp.char) {
-            ctx.fillStyle = tp.isAccent ? '#EF4444' : (isWhite ? '#18181B' : (progress > 0.88 ? '#E4E4E7' : '#FFFFFF'));
+            ctx.fillStyle = isWhite ? '#18181B' : '#FFFFFF';
             ctx.globalAlpha = glyphAlpha;
             ctx.fillText(tp.char, curX, curY);
           }
         }
-      } else {
-        // NORMAL LETTER-BY-LETTER KARAOKE READING
+      } else if (this.state === 'TRANSCRIBED') {
+        // FINISHED TRANSCRIBED MEMO: ALL WORDS SOLID WHITE AND READABLE (NO DIMMING)
+        for (let i = 0; i < this.memoChars.length; i++) {
+          const mc = this.memoChars[i];
+          if (mc.char === ' ') continue;
+          ctx.fillStyle = isWhite ? '#18181B' : '#FFFFFF';
+          ctx.globalAlpha = 1.0;
+          ctx.shadowBlur = 0;
+          ctx.fillText(mc.char, mc.charX, mc.charY);
+        }
+      } else if (this.state === 'PLAYING') {
+        // PLAY MODE ACTIVATED: SPOTIFY LYRICS READING
+        // Unspoken words dim to soft grey, spoken words ignite with radiant blooming halation
         const t = this.readingProgressSec;
         for (let i = 0; i < this.memoChars.length; i++) {
           const mc = this.memoChars[i];
@@ -1097,23 +1053,21 @@ export class AsciiPixelEngine {
 
           ctx.save();
           if (t >= mc.tEnd) {
-            // 1. Spoken / Already read: clean, solid, legible chalk white
+            // Spoken: clean chalk white
             ctx.fillStyle = isWhite ? '#18181B' : '#E4E4E7';
-            ctx.globalAlpha = mc.isAccent ? 1.0 : 0.85;
+            ctx.globalAlpha = 0.90;
             ctx.shadowBlur = 0;
           } else if (t >= mc.tStart) {
-            // 2. Currently being spoken / ignited: radiant blooming halation
+            // Currently being spoken: radiant blooming halation glow
             const progressInChar = (t - mc.tStart) / Math.max(0.001, mc.tEnd - mc.tStart);
             ctx.fillStyle = isWhite ? '#000000' : '#FFFFFF';
             ctx.globalAlpha = 1.0;
             if (!isWhite) {
-              ctx.shadowColor = mc.isAccent
-                ? 'rgba(255, 255, 255, 0.85)'
-                : 'rgba(255, 255, 255, 0.60)';
-              ctx.shadowBlur = Math.round(10 + Math.sin(progressInChar * Math.PI) * 8);
+              ctx.shadowColor = 'rgba(255, 255, 255, 0.90)';
+              ctx.shadowBlur = Math.round(14 + Math.sin(progressInChar * Math.PI) * 8);
             }
           } else {
-            // 3. Not yet spoken: soft graphite grey with gentle pre-warm
+            // Not yet spoken: dim graphite grey
             const dtUntilStart = mc.tStart - t;
             if (dtUntilStart < 0.08) {
               const pre = (0.08 - dtUntilStart) / 0.08;
@@ -1170,25 +1124,6 @@ export class AsciiPixelEngine {
       }
 
       ctx.restore();
-    }
-
-    // 3. 1px Laser Player Line sweeping from side to side in PLAYING state
-    if (this.state === 'PLAYING') {
-      const px = this.originX + this.playheadCol * this.cellW + this.cellW / 2;
-      const playheadColor = isWhite ? '#000000' : '#FFFFFF';
-
-      ctx.strokeStyle = playheadColor;
-      ctx.lineWidth = 1;
-      ctx.globalAlpha = 0.85;
-      ctx.beginPath();
-      ctx.moveTo(px, 6);
-      ctx.lineTo(px, this.height - 6);
-      ctx.stroke();
-
-      ctx.fillStyle = playheadColor;
-      ctx.globalAlpha = 1.0;
-      ctx.fillRect(px - 1.5, 3, 3, 3);
-      ctx.fillRect(px - 1.5, this.height - 6, 3, 3);
     }
 
     ctx.restore();
