@@ -70,7 +70,7 @@ export const AsciiCanvas: React.FC<AsciiCanvasProps> = ({
     }
 
     const renderLoop = (now: number) => {
-      const needVocalCadence = state === 'RECORDING' || state === 'PLAYING' || isSimulatingAudio;
+      const needVocalCadence = isSimulatingAudio || state === 'PLAYING';
       const audioData = audioSynth.getLiveAudioEnergy(now * 0.001, needVocalCadence);
 
       engine.update(now, audioData.energy);

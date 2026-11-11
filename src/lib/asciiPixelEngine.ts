@@ -299,17 +299,18 @@ export class AsciiPixelEngine {
     const t = this.fluidFlowPhase;
     const clampedEnergy = Math.max(0.001, Math.min(1.0, this.currentAudioEnergy));
     const dbfs = 20 * Math.log10(clampedEnergy);
-    const pulseStrength = Math.max(0, Math.min(1.0, (dbfs + 42) / 38));
-    const swell = 0.76 + pulseStrength * 0.62;
+    const pulseStrength = this.isRecordingPaused ? 0.0 : Math.max(0, Math.min(1.0, (dbfs + 42) / 38));
+    const swell = this.isRecordingPaused ? 1.0 : (0.76 + pulseStrength * 0.62);
+    const pulseFactor = this.isRecordingPaused ? 0.0 : 1.0;
 
     const blobs = [
-      { x: this.width * (0.38 + 0.22 * Math.sin(t * 0.45) + 0.08 * Math.cos(t * 0.90)), y: this.height * (0.24 + 0.12 * Math.cos(t * 0.38) + 0.05 * Math.sin(t * 0.85)), r: (82 + 10 * Math.sin(t * 0.60)) * swell, power: 1.15 },
-      { x: this.width * (0.58 + 0.22 * Math.cos(t * 0.36 + 1.6) + 0.07 * Math.sin(t * 0.92)), y: this.height * (0.64 + 0.14 * Math.sin(t * 0.42 + 0.9) + 0.05 * Math.cos(t * 0.78)), r: (84 + 10 * Math.cos(t * 0.48 + 2.1)) * swell, power: 1.12 },
-      { x: this.width * (0.48 + 0.32 * Math.sin(t * 0.72 + 2.5)), y: this.height * (0.44 + 0.30 * Math.cos(t * 0.65 + 1.8)), r: (36 + 6 * Math.sin(t * 0.85)) * swell, power: 1.05 },
-      { x: this.width * (0.22 + 0.15 * Math.cos(t * 0.80 + 3.8)), y: this.height * (0.52 + 0.20 * Math.sin(t * 0.60 + 2.4)), r: (30 + 5 * Math.cos(t * 1.05)) * swell, power: 1.02 },
-      { x: this.width * (0.88 + 0.08 * Math.sin(t * 0.48 + 1.0)), y: this.height * (0.16 + 0.12 * Math.cos(t * 0.58 + 3.2)), r: (72 + 10 * Math.sin(t * 0.68)) * swell, power: 1.05 },
-      { x: this.width * (0.14 + 0.09 * Math.cos(t * 0.52 + 4.6)), y: this.height * (0.84 + 0.08 * Math.sin(t * 0.44 + 1.4)), r: (75 + 10 * Math.cos(t * 0.56)) * swell, power: 1.06 },
-      { x: this.width * (0.52 + 0.18 * Math.sin(t * 0.58 + 5.2)), y: this.height * (0.88 + 0.07 * Math.cos(t * 0.68 + 4.2)), r: (56 + 8 * Math.sin(t * 0.75)) * swell, power: 0.98 },
+      { x: this.width * (0.38 + 0.22 * Math.sin(t * 0.45) + 0.08 * Math.cos(t * 0.90)), y: this.height * (0.24 + 0.12 * Math.cos(t * 0.38) + 0.05 * Math.sin(t * 0.85)), r: (82 + 10 * Math.sin(t * 0.60) * pulseFactor) * swell, power: 1.15 },
+      { x: this.width * (0.58 + 0.22 * Math.cos(t * 0.36 + 1.6) + 0.07 * Math.sin(t * 0.92)), y: this.height * (0.64 + 0.14 * Math.sin(t * 0.42 + 0.9) + 0.05 * Math.cos(t * 0.78)), r: (84 + 10 * Math.cos(t * 0.48 + 2.1) * pulseFactor) * swell, power: 1.12 },
+      { x: this.width * (0.48 + 0.32 * Math.sin(t * 0.72 + 2.5)), y: this.height * (0.44 + 0.30 * Math.cos(t * 0.65 + 1.8)), r: (36 + 6 * Math.sin(t * 0.85) * pulseFactor) * swell, power: 1.05 },
+      { x: this.width * (0.22 + 0.15 * Math.cos(t * 0.80 + 3.8)), y: this.height * (0.52 + 0.20 * Math.sin(t * 0.60 + 2.4)), r: (30 + 5 * Math.cos(t * 1.05) * pulseFactor) * swell, power: 1.02 },
+      { x: this.width * (0.88 + 0.08 * Math.sin(t * 0.48 + 1.0)), y: this.height * (0.16 + 0.12 * Math.cos(t * 0.58 + 3.2)), r: (72 + 10 * Math.sin(t * 0.68) * pulseFactor) * swell, power: 1.05 },
+      { x: this.width * (0.14 + 0.09 * Math.cos(t * 0.52 + 4.6)), y: this.height * (0.84 + 0.08 * Math.sin(t * 0.44 + 1.4)), r: (75 + 10 * Math.cos(t * 0.56) * pulseFactor) * swell, power: 1.06 },
+      { x: this.width * (0.52 + 0.18 * Math.sin(t * 0.58 + 5.2)), y: this.height * (0.88 + 0.07 * Math.cos(t * 0.68 + 4.2)), r: (56 + 8 * Math.sin(t * 0.75) * pulseFactor) * swell, power: 0.98 },
     ];
 
     const COLS = 50;
@@ -502,13 +503,14 @@ export class AsciiPixelEngine {
     this.currentTimeSec = timeSec;
     this.currentAudioEnergy = audioEnergy;
 
-    // Advance dynamic fluid flow phase with voice-reactive acceleration (or calm resting drift when paused)
+    // Advance dynamic fluid flow phase with voice-reactive acceleration.
+    // When paused: pulsing of blobs stops, but their movements continue along fluid paths at cruising speed (0.80)
     const effectiveEnergy = this.isRecordingPaused ? 0.001 : audioEnergy;
     this.currentAudioEnergy += (effectiveEnergy - this.currentAudioEnergy) * 0.25;
     const clampedAudio = Math.max(0.001, Math.min(1.0, this.currentAudioEnergy));
     const audioDbfs = 20 * Math.log10(clampedAudio);
-    const audioPulse = Math.max(0, Math.min(1.0, (audioDbfs + 42) / 38));
-    const flowVelocity = this.isRecordingPaused ? 0.12 : (0.80 + audioPulse * 0.45);
+    const audioPulse = this.isRecordingPaused ? 0.0 : Math.max(0, Math.min(1.0, (audioDbfs + 42) / 38));
+    const flowVelocity = 0.80 + (this.isRecordingPaused ? 0.0 : audioPulse * 0.45);
     this.fluidFlowPhase += dt * flowVelocity;
 
     const isWhite = this.theme === 'WHITE';
@@ -680,25 +682,30 @@ export class AsciiPixelEngine {
     const clampedEnergy = Math.max(0.001, Math.min(1.0, this.currentAudioEnergy));
     const dbfs = 20 * Math.log10(clampedEnergy);
     // Voice gate: -42 dBFS baseline silence, -4 dBFS loud speech peak
-    const pulseStrength = Math.max(0, Math.min(1.0, (dbfs + 42) / 38));
+    // When paused: zero pulse strength so blobs do NOT pulse
+    const pulseStrength = this.isRecordingPaused ? 0.0 : Math.max(0, Math.min(1.0, (dbfs + 42) / 38));
     
     // Use dynamic fluid flow phase for continuous organic evolution
     const t = this.fluidFlowPhase;
     // Decibel swell: 0.76x resting contraction -> 1.38x vocal expansion
-    const swell = 0.76 + pulseStrength * 0.62;
+    // When paused: steady 1.0 (zero pulsating expansion)
+    const swell = this.isRecordingPaused ? 1.0 : (0.76 + pulseStrength * 0.62);
+    // Radial pulsing factor: silenced when paused so radii remain steady
+    const pulseFactor = this.isRecordingPaused ? 0.0 : 1.0;
 
     const COLS = 50;
     const ROWS = 72;
     const cellW = this.width / COLS;
     const cellH = this.height / ROWS;
 
-    // Pure rounded, continuously circulating liquid metaballs with high surface tension
+    // Pure rounded, continuously circulating liquid metaballs with high surface tension.
+    // Movement coordinates (x, y) continuously traverse fluid paths at all times.
     const blobs = [
       // 1. Primary Upper Sphere
       {
         x: this.width * (0.38 + 0.22 * Math.sin(t * 0.45) + 0.08 * Math.cos(t * 0.90)),
         y: this.height * (0.24 + 0.12 * Math.cos(t * 0.38) + 0.05 * Math.sin(t * 0.85)),
-        r: (82 + 10 * Math.sin(t * 0.60)) * swell,
+        r: (82 + 10 * Math.sin(t * 0.60) * pulseFactor) * swell,
         power: 1.15 * (0.85 + pulseStrength * 0.35),
         hasCore: true,
       },
@@ -706,7 +713,7 @@ export class AsciiPixelEngine {
       {
         x: this.width * (0.58 + 0.22 * Math.cos(t * 0.36 + 1.6) + 0.07 * Math.sin(t * 0.92)),
         y: this.height * (0.64 + 0.14 * Math.sin(t * 0.42 + 0.9) + 0.05 * Math.cos(t * 0.78)),
-        r: (84 + 10 * Math.cos(t * 0.48 + 2.1)) * swell,
+        r: (84 + 10 * Math.cos(t * 0.48 + 2.1) * pulseFactor) * swell,
         power: 1.12 * (0.85 + pulseStrength * 0.35),
         hasCore: true,
       },
@@ -714,7 +721,7 @@ export class AsciiPixelEngine {
       {
         x: this.width * (0.48 + 0.32 * Math.sin(t * 0.72 + 2.5)),
         y: this.height * (0.44 + 0.30 * Math.cos(t * 0.65 + 1.8)),
-        r: (36 + 6 * Math.sin(t * 0.85)) * swell,
+        r: (36 + 6 * Math.sin(t * 0.85) * pulseFactor) * swell,
         power: 1.05 * (0.85 + pulseStrength * 0.35),
         hasCore: false,
       },
@@ -722,7 +729,7 @@ export class AsciiPixelEngine {
       {
         x: this.width * (0.22 + 0.15 * Math.cos(t * 0.80 + 3.8)),
         y: this.height * (0.52 + 0.20 * Math.sin(t * 0.60 + 2.4)),
-        r: (30 + 5 * Math.cos(t * 1.05)) * swell,
+        r: (30 + 5 * Math.cos(t * 1.05) * pulseFactor) * swell,
         power: 1.02 * (0.85 + pulseStrength * 0.35),
         hasCore: false,
       },
@@ -730,7 +737,7 @@ export class AsciiPixelEngine {
       {
         x: this.width * (0.88 + 0.08 * Math.sin(t * 0.48 + 1.0)),
         y: this.height * (0.16 + 0.12 * Math.cos(t * 0.58 + 3.2)),
-        r: (72 + 10 * Math.sin(t * 0.68)) * swell,
+        r: (72 + 10 * Math.sin(t * 0.68) * pulseFactor) * swell,
         power: 1.05 * (0.85 + pulseStrength * 0.35),
         hasCore: true,
       },
@@ -738,7 +745,7 @@ export class AsciiPixelEngine {
       {
         x: this.width * (0.14 + 0.09 * Math.cos(t * 0.52 + 4.6)),
         y: this.height * (0.84 + 0.08 * Math.sin(t * 0.44 + 1.4)),
-        r: (75 + 10 * Math.cos(t * 0.56)) * swell,
+        r: (75 + 10 * Math.cos(t * 0.56) * pulseFactor) * swell,
         power: 1.06 * (0.85 + pulseStrength * 0.35),
         hasCore: true,
       },
@@ -746,7 +753,7 @@ export class AsciiPixelEngine {
       {
         x: this.width * (0.52 + 0.18 * Math.sin(t * 0.58 + 5.2)),
         y: this.height * (0.88 + 0.07 * Math.cos(t * 0.68 + 4.2)),
-        r: (56 + 8 * Math.sin(t * 0.75)) * swell,
+        r: (56 + 8 * Math.sin(t * 0.75) * pulseFactor) * swell,
         power: 0.98 * (0.85 + pulseStrength * 0.35),
         hasCore: false,
       },
