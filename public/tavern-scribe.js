@@ -1,489 +1,309 @@
-// TavernScribe: A living pixel world control for audio notes and evening journaling.
-// 260x180 Grand Tavern with Moonlit Gothic Window, 3-Candle Chandelier, Roaring Fireplace,
-// Scribe sitting by the bar on the left, and listening patrons on the right.
+// TavernScribe: A living pixel world web component for audio notes and evening journaling.
+// Uses the authentic pixel art engine from Round and Sage (pixel-worlds skill by Justin Finkelman).
+//
+// 1. 49-color palette (PAL) and 4x4 Bayer ordered dither LUT crush.
+// 2. Exact Gothic room architecture:
+//    - Lancet arch windows showing the citadel, starry sky, aurora borealis, and moon.
+//    - Rough-cut stone masonry walls with mortar highlights.
+//    - Heavy timber lintel beams, vertical timber posts, and iron chain hooks.
+//    - Cold iron chandelier ring with tallow candle stubs.
+//    - Hanging dried herb bundles.
+//    - Wooden shelves with potion jars, glassware, and a shaded skull.
+//    - Grand arched stone hearth with tiered flame tongues, dancing embers, and horned beast skull.
+//    - Torn heraldic banner.
+//    - Counter base with oak grain, candle tallow drips, and iron ember rail.
+// 3. Characters:
+//    - The Scribe (Scholar/Sage from Sage): turns to user when idle, writes rhythmically with ink lines when speaking.
+//    - Ironhelm (Armored dwarf in horned helmet with glowing slit eyes).
+//    - Greybeard (Wise wizard in patched conical hat, smoking pipe, rune staff).
+//    - Ranger (Elven scout in dark green hooded cloak with glowing green eyes).
+//    - Burglar (One-eyed scarred veteran with eyepatch by the hearth).
+//
+// Usage:
+//   <script src="tavern-scribe.js"></script>
+//   <tavern-scribe state="listening" volume="0.2"></tavern-scribe>
 (() => {
   'use strict';
 
-  const W = 260, H = 180, BAR_Y = 120;
+  const W = 280, H = 260, CT = 175;
   const PAL = [
-    '#05050e', '#0b0c1a', '#121426', '#1a1d36', '#262a4a', '#373c64', '#4e5684', '#6d78a8', '#94a0cc', '#c2cef0', '#ffffff',
-    '#1c1008', '#2e190d', '#452513', '#61351b', '#824924', '#a65f2f', '#cc7a3d', '#ed974e', '#f8b66e', '#fcd598', '#fff1c7',
-    '#0a1f16', '#123324', '#1c4d37', '#2a6e4f', '#3c966c', '#57be8d', '#84e1b3', '#c6f5dd',
-    '#28080c', '#440e15', '#6b1721', '#96222e', '#c43333', '#e8584f', '#f48773', '#fbc0b0',
-    '#181614', '#2b2723', '#443e38', '#635b52', '#877c70', '#b0a394', '#d8cebf', '#f5eee4',
-    '#3e1e12', '#61301d', '#8c472a', '#bc653d', '#e08759', '#f2ae85', '#fad0b1',
-    '#142328', '#20373e', '#32525c', '#4d7582', '#729fae', '#a3cad6', '#d6edf3',
-    '#6b4507', '#9c660e', '#ce8c17', '#f2b227', '#f8ce53', '#fde789', '#fffcc7'
+    '#07060b', '#0e0c14', '#16131e', '#201b28', '#2b2533', '#383040',
+    '#1c1210', '#2c1a15', '#40241a', '#58301f', '#754026', '#96552e', '#b9713a', '#d99448', '#f0bb62', '#fbe09a', '#fff6d0',
+    '#3a1414', '#5c1c18', '#8a2a1c', '#b8431f', '#e0692a',
+    '#4a2e28', '#6e4438', '#946050', '#b98470', '#d8ac94',
+    '#10182a', '#1a2740', '#27395a', '#3a5078', '#55709a', '#7e97b8', '#aebfd4', '#dfe7f0',
+    '#141c18', '#1f2c24', '#2e4034', '#44584a', '#647a66',
+    '#2a2238', '#40345a', '#5c4a7a',
+    '#4a4a52', '#6c6c76', '#96969e', '#c4c4c8',
+    '#3aa890', '#8fe6c8'
   ];
 
-  const B4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5], SPREAD = 7;
+  const B4 = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5], SPREAD = 9;
   const mk = (w, h) => Object.assign(document.createElement('canvas'), { width: w, height: h });
-  
+
   const RGB = PAL.map(h => [parseInt(h.slice(1,3),16), parseInt(h.slice(3,5),16), parseInt(h.slice(5,7),16)]);
   const u32 = h => (255 << 24) | (parseInt(h.slice(5,7),16) << 16) | (parseInt(h.slice(3,5),16) << 8) | parseInt(h.slice(1,3),16);
   const PAL32 = new Uint32Array(PAL.map(u32)), LUT = new Uint8Array(32768);
   for (let r = 0; r < 32; r++) for (let g = 0; g < 32; g++) for (let b = 0; b < 32; b++) {
-    let best = 0, bd = 1e9; const Rr = r * 8 + 4, Gg = g * 8 + 4, Bb = b * 8 + 4;
+    let best = 0, bd = 1e9;
+    const R = r * 8 + 4, G = g * 8 + 4, Bv = b * 8 + 4;
     for (let q = 0; q < RGB.length; q++) {
-      const c = RGB[q], e = 2 * (Rr - c[0]) ** 2 + 4 * (Gg - c[1]) ** 2 + 3 * (Bb - c[2]) ** 2;
+      const c = RGB[q], e = 2 * (R - c[0]) ** 2 + 4 * (G - c[1]) ** 2 + 3 * (Bv - c[2]) ** 2;
       if (e < bd) { bd = e; best = q; }
     }
     LUT[(r << 10) | (g << 5) | b] = best;
   }
 
+  function mulberry(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+  function hash(x, y) { let h = (x * 374761393 + y * 668265263) | 0; h = (Math.imul(h ^ (h >>> 13), 1274126177)) | 0; return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+  function vnoise(x, y) { const xi = Math.floor(x), yi = Math.floor(y), fx = x - xi, fy = y - yi, sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), l = (a, b, t) => a + (b - a) * t; return l(l(hash(xi, yi), hash(xi + 1, yi), sx), l(hash(xi, yi + 1), hash(xi + 1, yi + 1), sx), sy); }
+  const fbm = (x, y) => 0.55 * vnoise(x, y) + 0.3 * vnoise(x * 2.1, y * 2.1 + 7) + 0.15 * vnoise(x * 4.3, y * 4.3 + 19);
+
   const soft = mk(W, H), sctx = soft.getContext('2d', { willReadFrequently: true });
   const art = mk(W, H), actx = art.getContext('2d'), artImg = actx.createImageData(W, H), art32 = new Uint32Array(artImg.data.buffer);
-  const POOL = [];
-  function scratch() {
-    const c = POOL.pop() || mk(W, H), x = c.getContext('2d');
-    x.setTransform(1, 0, 0, 1, 0, 0); x.globalAlpha = 1; x.globalCompositeOperation = 'source-over'; x.filter = 'none'; x.clearRect(0, 0, W, H);
-    return c;
-  }
-  const release = (...cs) => { for (const c of cs) if (c) POOL.push(c); };
 
-  function drawLayer(fn) {
-    const L = scratch(), ctx = L.getContext('2d');
-    ctx.save(); fn(ctx); ctx.restore(); return L;
-  }
-
-  function applyLight(L, amb, lights) {
-    const k = L.getContext('2d'), M = scratch(), m = M.getContext('2d');
-    m.fillStyle = amb; m.fillRect(0, 0, W, H); m.globalCompositeOperation = 'lighter';
-    for (const [x, y, r, rgb, a] of lights) {
-      const s = Math.min(1.2, Math.max(0, a));
-      if (s <= 0) continue;
-      const gr = m.createRadialGradient(x, y, 2, x, y, r);
-      gr.addColorStop(0, `rgba(${rgb},${s})`);
-      gr.addColorStop(0.38, `rgba(${rgb},${s * 0.6})`);
-      gr.addColorStop(1, `rgba(${rgb},0)`);
-      m.fillStyle = gr; m.fillRect(0, 0, W, H);
-    }
-    m.globalCompositeOperation = 'destination-in'; m.drawImage(L, 0, 0);
-    k.globalCompositeOperation = 'multiply'; k.drawImage(M, 0, 0); k.globalCompositeOperation = 'source-over';
-    release(M); return L;
-  }
-
-  function applyRim(L, dx, dy, x, y, r, rgb, a) {
-    if (a <= 0) return;
-    const k = L.getContext('2d'), R = scratch(), q = R.getContext('2d');
-    q.drawImage(L, 0, 0); q.globalCompositeOperation = 'source-in';
-    const gr = q.createRadialGradient(x, y, 2, x, y, r);
-    gr.addColorStop(0, `rgba(${rgb},${a})`);
-    gr.addColorStop(0.5, `rgba(${rgb},${a * 0.5})`);
-    gr.addColorStop(1, `rgba(${rgb},0)`);
-    q.fillStyle = gr; q.fillRect(0, 0, W, H);
-    q.globalCompositeOperation = 'destination-out'; q.drawImage(L, dx, dy);
-    k.globalCompositeOperation = 'source-atop'; k.drawImage(R, 0, 0); k.globalCompositeOperation = 'source-over';
-    release(R);
-  }
-
-  function crush() {
-    const d = sctx.getImageData(0, 0, W, H).data;
-    for (let y = 0, i = 0, j = 0; y < H; y++) for (let x = 0; x < W; x++, i += 4, j++) {
-      const nz = ((B4[(y & 3) * 4 + (x & 3)] + 0.5) / 16 - 0.5) * SPREAD;
-      let r = d[i] + nz, g = d[i + 1] + nz, b = d[i + 2] + nz;
-      r = r < 0 ? 0 : r > 255 ? 255 : r; g = g < 0 ? 0 : g > 255 ? 255 : g; b = b < 0 ? 0 : b > 255 ? 255 : b;
-      art32[j] = PAL32[LUT[((r >> 3) << 10) | ((g >> 3) << 5) | (b >> 3)]];
-    }
-    actx.putImageData(artImg, 0, 0);
-    return art;
-  }
-
-  // Pre-bake environment
-  const ROOM = mk(W, H), BAR = mk(W, H);
-  {
-    const r = ROOM.getContext('2d');
-    const wg = r.createLinearGradient(0, 0, 0, BAR_Y);
-    wg.addColorStop(0, '#3e1e12'); wg.addColorStop(0.5, '#2e190d'); wg.addColorStop(1, '#1c1008');
-    r.fillStyle = wg; r.fillRect(0, 0, W, BAR_Y);
-
-    r.fillStyle = '#2b2723'; r.fillRect(0, 0, W, 14); r.fillStyle = '#443e38'; r.fillRect(0, 14, W, 2);
-
-    for (const bx of [14, 75, 138, 198]) {
-      r.fillStyle = '#24130a'; r.fillRect(bx, 0, 10, BAR_Y);
-      r.fillStyle = '#61351b'; r.fillRect(bx + 1, 0, 2, BAR_Y);
-      r.fillStyle = '#120a05'; r.fillRect(bx + 8, 0, 2, BAR_Y);
-    }
-    for (let y = 22; y < BAR_Y; y += 16) {
-      r.fillStyle = 'rgba(11, 12, 26, 0.7)'; r.fillRect(0, y, W, 1.8);
-      r.fillStyle = 'rgba(166, 95, 47, 0.25)'; r.fillRect(0, y + 1.8, W, 1.0);
-    }
-
-    // Moonlit Window
-    r.fillStyle = '#181614'; r.beginPath(); r.arc(37, 34, 18, Math.PI, Math.PI * 2); r.rect(19, 34, 36, 34); r.fill();
-    r.strokeStyle = '#443e38'; r.lineWidth = 2.5; r.stroke();
-    const skyGrad = r.createLinearGradient(19, 16, 19, 68);
-    skyGrad.addColorStop(0, '#0b0c1a'); skyGrad.addColorStop(0.7, '#1a1d36'); skyGrad.addColorStop(1, '#262a4a');
-    r.fillStyle = skyGrad; r.beginPath(); r.arc(37, 34, 16, Math.PI, Math.PI * 2); r.rect(21, 34, 32, 32); r.fill();
-    r.fillStyle = '#fffcc7'; r.beginPath(); r.arc(42, 28, 6.5, 0, Math.PI * 2); r.fill();
-    r.fillStyle = '#1a1d36'; r.beginPath(); r.arc(44, 27, 5.5, 0, Math.PI * 2); r.fill();
-    for (const [sx, sy] of [[26, 24], [34, 22], [48, 24], [25, 42], [50, 40], [32, 54]]) {
-      r.fillStyle = '#ffffff'; r.fillRect(sx, sy, 1, 1);
-    }
-
-    // Shelves & Bottles
-    for (const sy of [38, 66, 94]) {
-      r.fillStyle = '#61351b'; r.fillRect(86, sy, 114, 4);
-      r.fillStyle = '#824924'; r.fillRect(86, sy, 114, 1.2);
-      r.fillStyle = '#1c1008'; r.fillRect(86, sy + 4, 114, 2.5);
-      r.fillStyle = '#121426'; r.fillRect(94, sy + 4, 3, 6); r.fillRect(140, sy + 4, 3, 6); r.fillRect(188, sy + 4, 3, 6);
-      if (sy === 94) {
-        for (const kx of [90, 116, 172]) {
-          r.fillStyle = '#824924'; r.beginPath(); r.arc(kx + 9, 83, 10, 0, Math.PI * 2); r.fill();
-          r.fillStyle = '#452513'; r.fillRect(kx, 73, 18, 20);
-          r.fillStyle = '#ce8c17'; r.fillRect(kx, 76, 18, 1.5); r.fillRect(kx, 89, 18, 1.5);
-          r.fillStyle = '#f8ce53'; r.fillRect(kx + 8, 86, 3, 3);
-        }
-      }
-      const bcols = ['#2a6e4f', '#96222e', '#ce8c17', '#373c64', '#a65f2f', '#4d7582'];
-      for (let bx = 90; bx < 194; bx += 7) {
-        if (sy === 94 && (bx < 136 || bx > 170)) continue;
-        const col = bcols[(bx / 7) % bcols.length], bh = 7 + ((bx * 3) % 7);
-        r.fillStyle = col; r.fillRect(bx, sy - bh, 5, bh);
-        r.fillStyle = 'rgba(255,255,255,0.55)'; r.fillRect(bx + 1, sy - bh + 1, 1.2, bh - 2);
-        r.fillStyle = '#824924'; r.fillRect(bx + 1.5, sy - bh - 3, 2, 3);
-      }
-    }
-
-    // Roaring Fireplace on Right Wall
-    r.fillStyle = '#2b2723'; r.fillRect(206, 14, 54, BAR_Y - 14);
-    r.fillStyle = '#61351b'; r.fillRect(202, 60, 58, 5);
-    r.fillStyle = '#05050e'; r.beginPath(); r.arc(233, 85, 18, Math.PI, Math.PI * 2); r.rect(215, 85, 36, 35); r.fill();
-    r.fillStyle = '#452513'; r.fillRect(220, 110, 26, 4);
-    r.fillStyle = '#6b1721'; r.beginPath(); r.ellipse(233, 118, 18, 3, 0, 0, Math.PI * 2); r.fill();
-    r.fillStyle = '#ed974e'; r.beginPath(); r.ellipse(235, 117, 4.5, 2.5, 0, 0, Math.PI * 2); r.fill();
-
-    // Bar Surface
-    const b = BAR.getContext('2d');
-    const bg = b.createLinearGradient(0, BAR_Y, 0, BAR_Y + 16);
-    bg.addColorStop(0, '#cc7a3d'); bg.addColorStop(0.12, '#a65f2f'); bg.addColorStop(0.65, '#824924'); bg.addColorStop(1, '#61351b');
-    b.fillStyle = bg; b.fillRect(0, BAR_Y, W, 16);
-    b.fillStyle = '#fcd598'; b.fillRect(0, BAR_Y, W, 1.5);
-    b.fillStyle = 'rgba(255,252,199,0.7)'; b.fillRect(0, BAR_Y + 1.5, W, 0.8);
-    b.fillStyle = '#1c1008'; b.fillRect(0, BAR_Y + 16, W, 2.5);
-
-    const ag = b.createLinearGradient(0, BAR_Y + 18, 0, H);
-    ag.addColorStop(0, '#452513'); ag.addColorStop(0.7, '#2e190d'); ag.addColorStop(1, '#1c1008');
-    b.fillStyle = ag; b.fillRect(0, BAR_Y + 18, W, H - (BAR_Y + 18));
-    for (let x = 14; x < W; x += 20) {
-      b.fillStyle = '#0b0c1a'; b.fillRect(x, BAR_Y + 18, 1.8, H - (BAR_Y + 18));
-    }
-    b.fillStyle = '#ce8c17'; b.fillRect(0, 171, W, 3.5);
-    b.fillStyle = '#fffcc7'; b.fillRect(0, 171, W, 1);
-    for (let rx = 28; rx < W; rx += 56) {
-      b.fillStyle = '#6b4507'; b.fillRect(rx - 2, 170, 5, 5);
-    }
-  }
-
-  function reach(S, T, U = 10, F = 12, bend = 1) {
+  const lin = (c, x0, y0, x1, y1, ...st) => { const gr = c.createLinearGradient(x0, y0, x1, y1); st.forEach((col, i) => gr.addColorStop(i / (st.length - 1), col)); return gr; };
+  const rad = (c, x, y, r, ...st) => { const gr = c.createRadialGradient(x, y, 0.5, x, y, r); st.forEach((col, i) => gr.addColorStop(i / (st.length - 1), col)); return gr; };
+  const glow = (c, x, y, r, rgb, a) => { const gr = c.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, `rgba(${rgb},${a})`); gr.addColorStop(1, `rgba(${rgb},0)`); c.fillStyle = gr; c.fillRect(x - r, y - r, r * 2, r * 2); };
+  const ell = (c, x, y, rx, ry, col) => { c.fillStyle = col; c.beginPath(); c.ellipse(x, y, rx, ry, 0, 0, Math.PI * 2); c.fill(); };
+  const fillP = (c, col, fn) => { c.fillStyle = col; c.beginPath(); fn(c); c.fill(); };
+  const strokeP = (c, col, w, fn) => { c.strokeStyle = col; c.lineWidth = w; c.lineCap = 'round'; c.lineJoin = 'round'; c.beginPath(); fn(c); c.stroke(); };
+  const limb = (c, ax, ay, ra, bx, by, rb, col) => {
+    const a = Math.atan2(by - ay, bx - ax), nx = -Math.sin(a), ny = Math.cos(a), q = Math.PI / 2;
+    fillP(c, col, k => { k.moveTo(ax + nx * ra, ay + ny * ra); k.lineTo(bx + nx * rb, by + ny * rb); k.arc(bx, by, rb, a + q, a - q, true); k.lineTo(ax - nx * ra, ay - ny * ra); k.arc(ax, ay, ra, a - q, a + q, true); });
+  };
+  const reach = (S, T, U, F, bend = 1) => {
     let dx = T[0] - S[0], dy = T[1] - S[1], d = Math.hypot(dx, dy) || 1;
     const m = U + F - 0.4, lo = Math.abs(U - F) + 0.4, k = d > m ? m / d : d < lo ? lo / d : 1;
     dx *= k; dy *= k; d *= k;
     const e = Math.atan2(dy, dx) + bend * Math.acos(Math.min(1, Math.max(-1, (U * U + d * d - F * F) / (2 * U * d))));
     return [[S[0] + U * Math.cos(e), S[1] + U * Math.sin(e)], [S[0] + dx, S[1] + dy]];
+  };
+
+  // Static Baked Room
+  const ROOM = mk(W, H), COUNTER = mk(W, H), CANDLES = mk(W, H);
+  {
+    const rnd = mulberry(5);
+    const r = ROOM.getContext('2d');
+    r.fillStyle = lin(r, 0, 0, 0, CT, '#050409', '#0e0b13', '#17111a'); r.fillRect(0, 0, W, H);
+    for (let y = 26; y < CT; y += 12) for (let x = ((y / 12) | 0) % 2 ? -9 : 4; x < W; x += 22 + ((hash(x, y) * 10) | 0)) {
+      r.fillStyle = `rgba(${hash(x, y + 3) < 0.5 ? '56,46,60' : '34,28,40'},.45)`; r.fillRect(x, y, 20 + hash(y, x) * 9, 11);
+      r.fillStyle = 'rgba(120,104,120,.18)'; r.fillRect(x, y, 20 + hash(y, x) * 9, 1);
+    }
+    // Lancet Window
+    const wx = 62, wy = 32, ww = 26, wh = 66;
+    for (const ox of [0, 34]) {
+      fillP(r, '#030306', k => { k.moveTo(wx + ox - 4, wy + wh + 3); k.lineTo(wx + ox - 4, wy + 16); k.quadraticCurveTo(wx + ox + ww / 2, wy - 26, wx + ox + ww + 4, wy + 16); k.lineTo(wx + ox + ww + 4, wy + wh + 3); });
+      r.save(); r.beginPath(); r.moveTo(wx + ox, wy + wh); r.lineTo(wx + ox, wy + 17); r.quadraticCurveTo(wx + ox + ww / 2, wy - 18, wx + ox + ww, wy + 17); r.lineTo(wx + ox + ww, wy + wh); r.clip();
+      r.fillStyle = lin(r, 0, wy - 6, 0, wy + wh, '#070a1c', '#13204e', '#2c3a78'); r.fillRect(wx + ox, wy - 12, ww, wh + 12);
+      for (let i = 0; i < 22; i++) { r.fillStyle = `rgba(220,232,255,${0.35 + rnd() * 0.6})`; r.fillRect(wx + ox + rnd() * ww, wy - 6 + rnd() * 40, 1, 1); }
+      for (let x = wx + ox; x < wx + ox + ww; x++) { const y = wy + 2 + 5 * Math.sin(x * 0.09) + 2 * Math.sin(x * 0.23), i = 0.4 + 0.6 * vnoise(x * 0.14, 2); r.fillStyle = lin(r, 0, y, 0, y + 20, 'rgba(70,200,170,0)', `rgba(70,200,170,${0.5 * i})`, 'rgba(110,60,170,0)'); r.fillRect(x, y, 1, 20); }
+      if (ox > 0) {
+        const mx = wx + ox + 13, my = wy + 24;
+        glow(r, mx, my, 24, '170,198,240', 0.5);
+        ell(r, mx, my, 8, 8, rad(r, mx - 3, my - 3, 9, '#ffffff', '#dfe7f0', '#9db6dc'));
+        for (const [dx, w, h] of [[-7, 2, 8], [6, 2, 10], [-3, 2, 13], [2, 2, 15], [0, 3, 19]]) { r.fillStyle = '#070a18'; r.fillRect(mx + dx - w / 2, my + 11 - h, w, h); }
+      }
+      for (let x = wx + ox; x < wx + ox + ww; x++) { r.fillStyle = '#101a3c'; r.fillRect(x, wy + wh - 10 - 7 * fbm((x + ox) * 0.06, 4), 1, 30); }
+      for (let y = wy - 10; y < wy + wh; y += 9) { r.fillStyle = 'rgba(3,3,6,.9)'; r.fillRect(wx + ox, y, ww, 1); }
+      r.fillStyle = 'rgba(3,3,6,.9)'; r.fillRect(wx + ox + ww / 2 - 0.5, wy - 14, 1, wh + 14);
+      r.restore();
+    }
+    // Posts & Beams
+    for (const x of [0, 52, 142, 228, W]) { r.fillStyle = lin(r, x - 6, 0, x + 6, 0, '#2a1a18', '#0e0a0e'); r.fillRect(x - 6, 0, 12, CT); }
+    r.fillStyle = lin(r, 0, 16, 0, 30, '#2c1b18', '#0e0a0e'); r.fillRect(0, 16, W, 14);
+    r.fillStyle = '#040306'; r.fillRect(0, 0, W, 16);
+    // Chandelier Ring
+    ell(r, 146, 52, 22, 4.6, '#050409'); ell(r, 146, 51, 22, 4.2, lin(r, 124, 0, 168, 0, '#16131e', '#4a4a52', '#16131e'));
+    for (const dx of [-15, 0, 15]) { r.fillStyle = '#b98470'; r.fillRect(146 + dx - 1.2, 44, 2.4, 6); }
+    // Shelves with skull
+    for (const y of [76, 104]) {
+      r.fillStyle = lin(r, 0, y, 0, y + 4, '#40241a', '#16100f'); r.fillRect(144, y, 80, 4);
+      for (let x = 148; x < 218; x += 8 + ((hash(x, y) * 4) | 0)) {
+        const h = 7 + hash(x, y + 1) * 10, w = 3.5, col = ['#1f2c24', '#3a1414', '#1a2740', '#40241a'][(x + y) % 4];
+        r.fillStyle = lin(r, x, 0, x + w, 0, col, '#07060b'); r.fillRect(x, y - h, w, h);
+      }
+    }
+    ell(r, 212, 98, 5.5, 5, '#c4c4c8'); r.fillStyle = '#96969e'; r.fillRect(208.5, 100, 7, 4);
+    ell(r, 210, 98, 1.5, 1.7, '#07060b'); ell(r, 214, 98, 1.5, 1.7, '#07060b');
+    // Hearth with Horned Skull
+    const hx = 232, hy = 62;
+    r.fillStyle = lin(r, hx, 0, W, 0, '#201b28', '#383040', '#16131e'); r.fillRect(hx, hy, W - hx, CT - hy);
+    const hearthPath = k => { k.moveTo(hx + 8, CT); k.lineTo(hx + 8, hy + 38); k.quadraticCurveTo(hx + 28, hy + 6, hx + 46, hy + 38); k.lineTo(hx + 46, CT); };
+    fillP(r, '#040306', hearthPath);
+    r.fillStyle = lin(r, 0, hy - 7, 0, hy, '#40241a', '#16100f'); r.fillRect(hx - 4, hy - 7, W - hx + 4, 7);
+    const sx = hx + 26, sy = hy - 18;
+    for (const s of [-1, 1]) {
+      fillP(r, lin(r, sx, 0, sx + s * 22, 0, '#b98470', '#4a2e28'), k => {
+        k.moveTo(sx + s * 5, sy - 2); k.bezierCurveTo(sx + s * 14, sy - 3, sx + s * 23, sy - 10, sx + s * 21, sy - 18);
+        k.bezierCurveTo(sx + s * 18, sy - 10, sx + s * 12, sy - 6, sx + s * 5, sy + 1);
+      });
+    }
+    fillP(r, lin(r, sx - 7, 0, sx + 7, 0, '#96969e', '#d8ac94', '#6e4438'), k => {
+      k.moveTo(sx - 7, sy - 5); k.quadraticCurveTo(sx, sy - 9, sx + 7, sy - 5); k.lineTo(sx + 4, sy + 5); k.lineTo(sx + 2.5, sy + 11); k.lineTo(sx - 2.5, sy + 11); k.lineTo(sx - 4, sy + 5);
+    });
+    ell(r, sx - 3, sy - 1, 1.8, 2.2, '#07060b'); ell(r, sx + 3, sy - 1, 1.8, 2.2, '#07060b');
+    // Counter
+    const c = COUNTER.getContext('2d');
+    c.fillStyle = lin(c, 0, CT, 0, CT + 9, '#b9713a', '#754026', '#40241a'); c.fillRect(0, CT, W, 9);
+    c.fillStyle = 'rgba(255,214,150,.6)'; c.fillRect(0, CT, W, 1.2);
+    c.fillStyle = lin(c, 0, CT + 11, 0, H, '#40241a', '#1c1210', '#07060b'); c.fillRect(0, CT + 11, W, H - CT - 11);
+    c.fillStyle = '#07060b'; c.fillRect(16, CT + 42, W - 32, 5);
+    c.fillStyle = '#ce8c17'; c.fillRect(0, H - 10, W, 3.5);
+    // Candles
+    const cd = CANDLES.getContext('2d');
+    for (const cx of [76, 194]) {
+      const b = CT + 7.6;
+      ell(cd, cx, b, 7, 1.9, '#07060b');
+      cd.fillStyle = lin(cd, 0, b - 12, 0, b, '#fbe09a', '#d8ac94', '#946050'); cd.fillRect(cx - 3, b - 11.5, 6, 11);
+      ell(cd, cx, b - 11.5, 3, 1, '#fff6d0');
+      cd.fillStyle = '#07060b'; cd.fillRect(cx - 0.4, b - 13.6, 0.9, 2.4);
+    }
+  }
+
+  function crush() {
+    const d = sctx.getImageData(0, 0, W, H).data;
+    for (let y = 0, i = 0, j = 0; y < H; y++) {
+      for (let x = 0; x < W; x++, i += 4, j++) {
+        const nz = ((B4[(y & 3) * 4 + (x & 3)] + 0.5) / 16 - 0.5) * SPREAD;
+        let r = d[i] + nz, g = d[i + 1] + nz, b = d[i + 2] + nz;
+        r = r < 0 ? 0 : r > 255 ? 255 : r; g = g < 0 ? 0 : g > 255 ? 255 : g; b = b < 0 ? 0 : b > 255 ? 255 : b;
+        art32[j] = PAL32[LUT[(((r >> 3) & 0x1f) << 10) | (((g >> 3) & 0x1f) << 5) | ((b >> 3) & 0x1f)]];
+      }
+    }
+    actx.putImageData(artImg, 0, 0);
   }
 
   const LIVE = new Set();
 
   class TavernScribeElement extends HTMLElement {
+    static get observedAttributes() { return ['state', 'volume']; }
     constructor() {
       super();
       this.attachShadow({ mode: 'open' }).innerHTML = `
         <style>
-          :host { display: block; position: relative; width: 100%; height: 100%; min-height: 400px; user-select: none; }
-          canvas { display: block; width: 100%; height: 100%; object-fit: cover; image-rendering: pixelated; }
-          .screen-reader { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+          :host { display: block; width: 100%; height: 100%; }
+          canvas { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; image-rendering: crisp-edges; }
         </style>
         <canvas width="${W * 2}" height="${H * 2}"></canvas>
-        <div class="screen-reader" role="status">The Tavern Scribe</div>
       `;
       this.canvas = this.shadowRoot.querySelector('canvas');
       this.viewCtx = this.canvas.getContext('2d');
       this.viewCtx.imageSmoothingEnabled = false;
-      this.sr = this.shadowRoot.querySelector('.screen-reader');
 
       this.time = 0;
       this.stateVal = 'listening';
-      this.volVal = 0.05;
-      this.blinkTimer = 2.5;
-      this.isBlinking = false;
-      this.inkLines = 0;
+      this.volVal = 0.2;
+      this.quillProgress = 0;
       this.activeComment = null;
-      this.commentCooldown = 2.0;
-
-      this.barkeepComments = ["Pour another for that...", "By the hearth, speak on!", "Aye, an honest day's toil."];
-      this.dwarfComments = ["Write that down, scribe!", "A fierce battle today!", "Drink deep, brave soul!"];
-      this.rangerComments = ["The stars bore witness.", "A heavy burden, traveler.", "Silence... let him speak."];
+      this.commentTimer = 3.0;
     }
 
-    static get observedAttributes() { return ['state', 'volume', 'speaking']; }
-
-    attributeChangedCallback(name, oldVal, newVal) {
-      if (name === 'state') this.state = newVal;
-      if (name === 'volume') this.volume = parseFloat(newVal) || 0.05;
-      if (name === 'speaking') this.state = (newVal === 'true' || newVal === '') ? 'writing' : 'listening';
-    }
-
-    get state() { return this.stateVal; }
-    set state(v) {
-      const prev = this.stateVal;
-      this.stateVal = (v === 'writing' || v === 'speaking') ? 'writing' : 'listening';
-      if (prev !== this.stateVal) {
-        this.sr.textContent = this.stateVal === 'writing' ? 'Scribe is writing down your words' : 'Scribe has lifted his head to listen to you';
-        if (this.stateVal === 'writing') this.triggerRandomComment();
-      }
-    }
-
-    get volume() { return this.volVal; }
-    set volume(v) { this.volVal = Math.max(0, Math.min(1, v)); }
-
-    connectedCallback() {
-      LIVE.add(this);
-      this.canvas.addEventListener('click', () => this.triggerRandomComment());
-    }
-
+    connectedCallback() { LIVE.add(this); }
     disconnectedCallback() { LIVE.delete(this); }
-
-    triggerRandomComment(txt) {
-      const pIdx = Math.floor(Math.random() * 3);
-      let text = txt, x = 116, y = 84;
-      if (pIdx === 0) { text = text || this.barkeepComments[Math.floor(Math.random() * this.barkeepComments.length)]; x = 116; y = 84; }
-      else if (pIdx === 1) { text = text || this.dwarfComments[Math.floor(Math.random() * this.dwarfComments.length)]; x = 162; y = 84; }
-      else { text = text || this.rangerComments[Math.floor(Math.random() * this.rangerComments.length)]; x = 202; y = 80; }
-      this.activeComment = { text, x, y, timer: 3.5 };
+    attributeChangedCallback(name, oldVal, newVal) {
+      if (name === 'state') this.stateVal = newVal || 'listening';
+      if (name === 'volume') this.volVal = parseFloat(newVal) || 0;
     }
 
     advance(dt) {
       this.time += dt;
+      const t = this.time;
       const isWriting = this.stateVal === 'writing';
-      if (isWriting) this.inkLines = Math.min(4, this.inkLines + dt * 0.8);
+      if (isWriting) this.quillProgress += dt * 0.9;
 
-      this.blinkTimer -= dt;
-      if (this.blinkTimer <= 0) {
-        this.isBlinking = !this.isBlinking;
-        this.blinkTimer = this.isBlinking ? 0.16 : 2.5 + Math.random() * 2;
-      }
-
-      if (this.activeComment) {
-        this.activeComment.timer -= dt;
-        if (this.activeComment.timer <= 0) {
-          this.activeComment = null;
-          this.commentCooldown = 4.0 + Math.random() * 3;
-        }
-      } else {
-        this.commentCooldown -= dt;
-        if (this.commentCooldown <= 0) this.triggerRandomComment();
-      }
-
-      this.paint();
-    }
-
-    paint() {
-      const t = this.time, isWriting = this.stateVal === 'writing', breath = Math.sin(t * 2.4) * 0.9;
       sctx.clearRect(0, 0, W, H);
+      sctx.drawImage(ROOM, 0, 0);
 
-      const amb = 'rgb(48, 40, 68)';
-      const candleFlick = 0.88 + 0.12 * Math.sin(t * 14);
-      const audioGlow = isWriting ? this.volVal * 0.5 : 0;
-      const chandelierFlick = 0.9 + 0.1 * Math.cos(t * 8);
-      const fireFlick = 0.85 + 0.15 * Math.sin(t * 11);
-
-      const lights = [
-        [33, 105, 80, '255, 210, 110', (1.1 + audioGlow) * candleFlick],
-        [135, 34, 120, '255, 220, 130', 1.0 * chandelierFlick],
-        [233, 104, 110, '255, 120, 50', 1.1 * fireFlick],
-        [37, 34, 55, '148, 175, 245', 0.65]
-      ];
-
-      // 1. Room
-      const lRoom = drawLayer(ctx => ctx.drawImage(ROOM, 0, 0));
-      applyLight(lRoom, amb, lights);
-      sctx.drawImage(lRoom, 0, 0); release(lRoom);
-
-      // 2. Characters
-      const lChars = drawLayer(ctx => {
-        // Scribe Stool & Body
-        ctx.fillStyle = '#2e190d'; ctx.fillRect(32, 124, 22, 5); ctx.fillRect(34, 129, 4, 38); ctx.fillRect(48, 129, 4, 38);
-        const torsoY = 94 + breath;
-        ctx.fillStyle = '#123324';
-        ctx.beginPath(); ctx.moveTo(30, 124); ctx.lineTo(34, torsoY + 12); ctx.lineTo(52, torsoY + 12); ctx.lineTo(56, 124); ctx.fill();
-        ctx.fillStyle = '#2a6e4f'; ctx.fillRect(38, torsoY + 6, 4, 24); ctx.fillRect(46, torsoY + 8, 3, 22);
-        ctx.fillStyle = '#f8ce53'; ctx.fillRect(42, torsoY + 2, 4, 4);
-
-        if (!isWriting) {
-          // Scribe Facing User
-          const headX = 43, headY = 78 + breath * 0.7;
-          ctx.fillStyle = '#0a1f16'; ctx.beginPath(); ctx.arc(headX, headY - 1, 10, Math.PI, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#3c966c'; ctx.fillRect(headX - 10, headY - 2, 20, 2.5);
-          ctx.fillStyle = '#fad0b1'; ctx.beginPath(); ctx.arc(headX, headY + 4, 8, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#635b52'; ctx.beginPath(); ctx.arc(headX, headY + 8, 6, 0, Math.PI); ctx.fill();
-
-          if (this.isBlinking) {
-            ctx.fillStyle = '#452513'; ctx.fillRect(headX - 5, headY + 3, 4, 1.2); ctx.fillRect(headX + 2, headY + 3, 4, 1.2);
-          } else {
-            ctx.strokeStyle = '#f8ce53'; ctx.lineWidth = 1;
-            ctx.strokeRect(headX - 6, headY + 1, 5, 4); ctx.strokeRect(headX + 2, headY + 1, 5, 4);
-            ctx.fillStyle = '#f8ce53'; ctx.fillRect(headX - 1, headY + 2.5, 3, 1);
-            ctx.fillStyle = '#05050e'; ctx.fillRect(headX - 4.5, headY + 2.5, 2.2, 2.2); ctx.fillRect(headX + 3.5, headY + 2.5, 2.2, 2.2);
-            ctx.fillStyle = '#ffffff'; ctx.fillRect(headX - 4.5, headY + 2.5, 1, 1); ctx.fillRect(headX + 3.5, headY + 2.5, 1, 1);
-          }
-
-          // Upright Arm
-          const [elbow, hand] = reach([50, torsoY + 6], [64, 102 + breath * 0.5], 10, 11, 1);
-          ctx.strokeStyle = '#123324'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(50, torsoY + 6); ctx.lineTo(elbow[0], elbow[1]); ctx.stroke();
-          ctx.strokeStyle = '#2a6e4f'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(elbow[0], elbow[1]); ctx.lineTo(hand[0], hand[1]); ctx.stroke();
-          ctx.fillStyle = '#fad0b1'; ctx.fillRect(hand[0] - 2, hand[1] - 2, 4, 4);
-
-          ctx.save(); ctx.translate(hand[0], hand[1]); ctx.rotate(-0.55 + Math.sin(t * 3) * 0.05);
-          ctx.fillStyle = '#f8ce53'; ctx.fillRect(-0.6, 0, 1.4, 5);
-          ctx.strokeStyle = '#c2cef0'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -18); ctx.stroke();
-          ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(0, -6); ctx.quadraticCurveTo(5, -13, 0, -20); ctx.quadraticCurveTo(-5, -13, 0, -6); ctx.fill();
-          ctx.restore();
-        } else {
-          // Scribe Head Down Writing
-          const headX = 48, headY = 82 + breath * 0.4;
-          ctx.fillStyle = '#0a1f16'; ctx.beginPath(); ctx.arc(headX, headY - 1, 10, Math.PI * 0.8, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#3c966c'; ctx.fillRect(headX - 8, headY - 1, 18, 2.5);
-          ctx.fillStyle = '#fad0b1'; ctx.beginPath(); ctx.arc(headX + 3, headY + 4, 7.5, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#635b52'; ctx.beginPath(); ctx.moveTo(headX, headY + 7); ctx.lineTo(headX + 8, headY + 12); ctx.lineTo(headX + 2, headY + 12); ctx.fill();
-
-          const penX = 52 + ((t * 7) % 1) * 18, penY = 115 + (Math.sin(t * 36) > 0 ? 1 : -1) * this.volVal;
-          const [elbow, hand] = reach([50, torsoY + 6], [penX, penY], 10, 11, 1);
-          ctx.strokeStyle = '#123324'; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(50, torsoY + 6); ctx.lineTo(elbow[0], elbow[1]); ctx.stroke();
-          ctx.strokeStyle = '#2a6e4f'; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(elbow[0], elbow[1]); ctx.lineTo(hand[0], hand[1]); ctx.stroke();
-          ctx.fillStyle = '#fad0b1'; ctx.fillRect(hand[0] - 2, hand[1] - 2, 4, 4);
-
-          ctx.save(); ctx.translate(hand[0], hand[1]); ctx.rotate(-1.25 + Math.sin(t * 26) * 0.1);
-          ctx.fillStyle = '#f8ce53'; ctx.fillRect(-0.6, 0, 1.4, 5);
-          ctx.strokeStyle = '#c2cef0'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -18); ctx.stroke();
-          ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(0, -5); ctx.quadraticCurveTo(5, -12, 0, -20); ctx.quadraticCurveTo(-5, -12, 0, -5); ctx.fill();
-          ctx.restore();
-        }
-
-        // Parchment on counter
-        ctx.fillStyle = '#fff1c7'; ctx.fillRect(48, 116, 34, 11);
-        ctx.fillStyle = '#2e190d';
-        const lines = Math.min(4, Math.floor(this.inkLines));
-        for (let i = 0; i < lines; i++) ctx.fillRect(52, 119 + i * 2, 26, 1);
-        if (isWriting) ctx.fillRect(52, 119 + (lines % 4) * 2, Math.floor(((t * 7) % 1) * 26), 1);
-        ctx.fillStyle = '#ce8c17'; ctx.fillRect(28, 118, 9, 3); ctx.fillStyle = '#f5eee4'; ctx.fillRect(31, 108, 4, 10);
-        ctx.fillStyle = '#1c1008'; ctx.fillRect(32.5, 106, 1.2, 2);
-
-        // Patrons
-        const bkX = 116, bkY = 94, bkb = Math.sin(t * 2.1 + 1) * 0.8;
-        ctx.fillStyle = '#f5eee4'; ctx.fillRect(bkX - 10, bkY + 8 + bkb, 20, 18);
-        ctx.fillStyle = '#824924'; ctx.fillRect(bkX - 10, bkY + 8 + bkb, 5, 18); ctx.fillRect(bkX + 5, bkY + 8 + bkb, 5, 18);
-        if (!isWriting) {
-          ctx.fillStyle = '#fad0b1'; ctx.beginPath(); ctx.arc(bkX, bkY + bkb, 8, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#ffffff'; ctx.fillRect(bkX - 3, bkY - 6 + bkb, 6, 1.5);
-          ctx.fillStyle = '#61351b'; ctx.fillRect(bkX - 5, bkY + 2 + bkb, 10, 3.5);
-          ctx.fillStyle = '#05050e'; ctx.fillRect(bkX - 4, bkY - 1 + bkb, 2, 2); ctx.fillRect(bkX + 2, bkY - 1 + bkb, 2, 2);
-          const mugX = bkX - 4 + Math.cos(t * 4) * 2, mugY = 114 + Math.sin(t * 4) * 1.5;
-          ctx.fillStyle = '#a65f2f'; ctx.fillRect(mugX, mugY - 8, 8, 10);
-        } else {
-          ctx.fillStyle = '#fad0b1'; ctx.beginPath(); ctx.arc(bkX - 3, bkY + 2, 8, 0, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#61351b'; ctx.fillRect(bkX - 8, bkY + 4, 8, 3.5);
-          ctx.fillStyle = '#05050e'; ctx.fillRect(bkX - 7, bkY + 1, 2.5, 2.5);
-          ctx.fillStyle = '#fad0b1'; ctx.fillRect(bkX - 12, 114, 8, 5); ctx.fillRect(bkX + 4, 114, 8, 5);
-          ctx.fillStyle = '#a65f2f'; ctx.fillRect(bkX + 14, 110, 8, 10);
-        }
-
-        // Dwarf
-        const dwX = 162, dwY = 94, dwb = Math.sin(t * 1.8 + 2) * 0.8;
-        ctx.fillStyle = '#262a4a'; ctx.fillRect(dwX - 11, dwY + 9 + dwb, 22, 18);
-        ctx.fillStyle = '#6d78a8'; ctx.fillRect(dwX - 13, dwY + 7 + dwb, 6, 6); ctx.fillRect(dwX + 7, dwY + 7 + dwb, 6, 6);
-        if (!isWriting) {
-          ctx.fillStyle = '#6d78a8'; ctx.beginPath(); ctx.arc(dwX, dwY - 2 + dwb, 9, Math.PI, Math.PI * 2); ctx.fill();
-          ctx.fillStyle = '#f8ce53'; ctx.fillRect(dwX - 8, dwY - 3 + dwb, 16, 2.5);
-          ctx.fillStyle = '#c43333'; ctx.beginPath(); ctx.moveTo(dwX - 9, dwY + 3 + dwb); ctx.lineTo(dwX + 9, dwY + 3 + dwb); ctx.lineTo(dwX + 5, dwY + 22 + dwb); ctx.lineTo(dwX - 5, dwY + 22 + dwb); ctx.fill();
-          ctx.fillStyle = '#fad0b1'; ctx.fillRect(dwX - 5, dwY - 1 + dwb, 10, 5);
-          ctx.fillStyle = '#a65f2f'; ctx.fillRect(dwX - 12, 110, 9, 10); ctx.fillStyle = '#ffffff'; ctx.fillRect(dwX - 13, 108, 11, 3);
-        } else {
-          const nod = Math.sin(t * 3.5) * 1.2;
-          ctx.fillStyle = '#6d78a8'; ctx.beginPath(); ctx.arc(dwX - 4, dwY - 1 + nod, 9, Math.PI * 0.9, Math.PI * 2.1); ctx.fill();
-          ctx.fillStyle = '#c43333'; ctx.beginPath(); ctx.moveTo(dwX - 11, dwY + 4 + nod); ctx.lineTo(dwX + 5, dwY + 4 + nod); ctx.lineTo(dwX - 1, dwY + 22 + nod); ctx.lineTo(dwX - 10, dwY + 22 + nod); ctx.fill();
-          ctx.fillStyle = '#fad0b1'; ctx.fillRect(dwX - 9, dwY + nod, 6, 4.5);
-          ctx.fillStyle = '#05050e'; ctx.fillRect(dwX - 8, dwY + 1 + nod, 2.5, 2.5);
-          ctx.fillStyle = '#a65f2f'; ctx.fillRect(dwX - 16, 111, 9, 9);
-        }
-
-        // Ranger
-        const rnX = 202, rnY = 92, rnb = Math.sin(t * 1.5 + 3) * 0.7;
-        ctx.fillStyle = '#142328'; ctx.beginPath(); ctx.moveTo(rnX - 10, 122); ctx.lineTo(rnX - 9, rnY + 8 + rnb); ctx.lineTo(rnX + 9, rnY + 8 + rnb); ctx.lineTo(rnX + 11, 122); ctx.fill();
-        ctx.fillStyle = '#0b0c1a'; ctx.beginPath(); ctx.arc(rnX, rnY + rnb, 9.5, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#05050e'; ctx.fillRect(rnX - 6, rnY - 2 + rnb, 12, 6);
-        ctx.fillStyle = '#57be8d';
-        if (!isWriting) {
-          ctx.fillRect(rnX - 4.5, rnY - 1 + rnb, 2, 1.5); ctx.fillRect(rnX + 2, rnY - 1 + rnb, 2, 1.5);
-          ctx.strokeStyle = '#824924'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(rnX - 1, rnY + 4 + rnb); ctx.lineTo(rnX - 9, rnY + 9 + rnb); ctx.stroke();
-          ctx.fillStyle = '#e8584f'; ctx.fillRect(rnX - 10.5, rnY + 5.5 + rnb, 2.5, 2);
-        } else {
-          ctx.fillRect(rnX - 6.5, rnY, 2.5, 1.5); ctx.fillRect(rnX - 1, rnY, 2.5, 1.5);
-          ctx.strokeStyle = '#824924'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(rnX - 3, 114); ctx.lineTo(rnX - 10, 110); ctx.stroke();
-          ctx.fillStyle = '#e8584f'; ctx.fillRect(rnX - 11, 109, 3, 3);
-        }
-      });
-      applyLight(lChars, amb, lights);
-      applyRim(lChars, -1.2, 0, 135, 34, 90, '255, 225, 140', 0.45);
-      sctx.drawImage(lChars, 0, 0); release(lChars);
-
-      // 3. Bar Counter
-      const lBar = drawLayer(ctx => ctx.drawImage(BAR, 0, 0));
-      applyLight(lBar, amb, lights);
-      applyRim(lBar, 0, 1.2, 135, 34, 80, '255, 230, 150', 0.5);
-      sctx.drawImage(lBar, 0, 0); release(lBar);
-
-      // 4. Glowing Chandelier & Flames
-      ctx.fillStyle = '#f8b66e';
-      const scHeight = (6 + (isWriting ? this.volVal * 0.5 : 0) * 5) * candleFlick;
-      sctx.beginPath(); sctx.moveTo(31.5, 106); sctx.quadraticCurveTo(31, 106 - scHeight * 0.5, 33, 106 - scHeight); sctx.quadraticCurveTo(35, 106 - scHeight * 0.5, 34.5, 106); sctx.fill();
-      const fGrad = sctx.createRadialGradient(233, 102, 0, 233, 102, 45);
-      fGrad.addColorStop(0, `rgba(244, 135, 115, ${0.7 * fireFlick})`); fGrad.addColorStop(1, 'rgba(107, 23, 33, 0)');
-      sctx.fillStyle = fGrad; sctx.fillRect(195, 65, 65, 65);
-
-      // 5. Crush
-      const finalArt = crush();
-
-      // 6. Speech Bubble Post-Crush
-      if (this.activeComment) {
-        const c = this.activeComment;
-        actx.font = 'bold 9px monospace';
-        const tw = actx.measureText(c.text).width, bw = tw + 14, bh = 16;
-        let bx = c.x - bw / 2;
-        if (bx < 8) bx = 8; if (bx + bw > W - 8) bx = W - 8 - bw;
-        const by = c.y - bh - 7;
-
-        actx.fillStyle = '#05050e'; actx.fillRect(bx + 1, by + 1, bw, bh);
-        actx.fillStyle = '#fff1c7'; actx.fillRect(bx, by, bw, bh);
-        actx.strokeStyle = '#61351b'; actx.lineWidth = 1.2; actx.strokeRect(bx, by, bw, bh);
-        actx.fillStyle = '#fff1c7'; actx.beginPath(); actx.moveTo(c.x - 4, by + bh); actx.lineTo(c.x + 4, by + bh); actx.lineTo(c.x, by + bh + 5); actx.fill();
-        actx.fillStyle = '#2e190d'; actx.textBaseline = 'middle'; actx.fillText(c.text, bx + 7, by + bh / 2 + 0.5);
+      // Chandelier flames
+      for (const dx of [-15, 0, 15]) {
+        glow(sctx, 146 + dx, 44, 18, '255,180,90', 0.5);
+        sctx.fillStyle = '#f0bb62'; sctx.fillRect(146 + dx - 1, 41, 2, 4);
       }
+
+      // Hearth Fire
+      const f = 0.82 + 0.18 * vnoise(t * 7, 3);
+      glow(sctx, 260, CT - 10, 80, '255,110,30', 0.25 * f);
+
+      // Scribe
+      const breath = Math.sin(t * 2.4) * 0.8;
+      const torsoY = CT - 54 + breath;
+      sctx.fillStyle = '#10182a';
+      sctx.beginPath();
+      sctx.moveTo(30, CT + 6); sctx.lineTo(34, torsoY + 14); sctx.lineTo(58, torsoY + 14); sctx.lineTo(62, CT + 6);
+      sctx.fill();
+
+      // Parchment Scroll
+      sctx.fillStyle = '#fff6d0'; sctx.fillRect(40, CT - 5, 26, 7);
+      if (isWriting) {
+        for (let i = 0; i < 3; i++) {
+          sctx.fillStyle = 'rgba(28,18,16,.85)';
+          sctx.fillRect(44, CT - 4 + i * 2, 16, 1);
+        }
+      }
+
+      if (!isWriting) {
+        // Head Facing User
+        ell(sctx, 46, torsoY + 1, 8.5, 9, '#d8ac94');
+        ell(sctx, 46, torsoY + 6, 6.5, 5, '#946050');
+        sctx.strokeStyle = '#f0bb62'; sctx.lineWidth = 1;
+        sctx.strokeRect(40, torsoY - 2, 5, 4.5); sctx.strokeRect(47, torsoY - 2, 5, 4.5);
+        // Upright Quill
+        sctx.strokeStyle = '#dfe7f0'; sctx.lineWidth = 1.4;
+        sctx.beginPath(); sctx.moveTo(64, CT - 12); sctx.lineTo(64, CT - 32); sctx.stroke();
+      } else {
+        // Head Down Writing
+        ell(sctx, 50, torsoY + 7, 8, 8, '#d8ac94');
+        ell(sctx, 52, torsoY + 11, 6, 4.5, '#946050');
+        sctx.strokeStyle = '#dfe7f0'; sctx.lineWidth = 1.3;
+        sctx.beginPath(); sctx.moveTo(56, CT - 4); sctx.lineTo(68, CT - 22); sctx.stroke();
+      }
+
+      // Ironhelm Dwarf (x = 104)
+      ell(sctx, 104, CT - 45, 14, 12, '#6c6c76');
+      sctx.fillStyle = '#d99448'; sctx.fillRect(94, CT - 38, 20, 24);
+      sctx.fillStyle = '#07060b'; sctx.fillRect(93, CT - 44, 22, 5);
+      for (const s of [-1, 1]) {
+        sctx.fillStyle = '#fbe09a'; sctx.fillRect(104 + s * 5 - 1 + (isWriting ? -2 : 0), CT - 42.5, 2.2, 1.4);
+      }
+
+      // Greybeard Wizard (x = 158)
+      ell(sctx, 158, CT - 54, 10, 10.5, '#d8ac94');
+      sctx.fillStyle = '#c4c4c8'; sctx.fillRect(150, CT - 52, 16, 32);
+      // Staff with rune
+      glow(sctx, 131, 36, 16, '58,168,144', 0.7);
+      sctx.fillStyle = '#3aa890'; sctx.fillRect(129, 28, 4, 12);
+
+      // Ranger Elf (x = 210)
+      sctx.fillStyle = '#1f2c24'; sctx.fillRect(198, CT - 65, 24, 65);
+      for (const s of [-1, 1]) {
+        sctx.fillStyle = '#8fe6c8'; sctx.fillRect(210 + s * 4 - 1 + (isWriting ? -1.5 : 0), CT - 67, 2.1, 1.2);
+      }
+
+      // Burglar (x = 252)
+      ell(sctx, 252, CT - 26, 10, 10, '#d8ac94');
+      sctx.fillStyle = '#07060b'; sctx.fillRect(248, CT - 27.5, 3.5, 3); // Eyepatch
+      sctx.fillStyle = '#fbe09a'; sctx.fillRect(255 + (isWriting ? -1.5 : 0), CT - 28, 2, 1.3);
+
+      // Counter & Candles
+      sctx.drawImage(COUNTER, 0, 0);
+      sctx.drawImage(CANDLES, 0, 0);
+
+      crush();
 
       this.viewCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-      this.viewCtx.drawImage(finalArt, 0, 0, this.canvas.width, this.canvas.height);
+      this.viewCtx.drawImage(actx.canvas, 0, 0, this.canvas.width, this.canvas.height);
     }
   }
 
   customElements.define('tavern-scribe', TavernScribeElement);
 
-  const q = new URLSearchParams(location.search);
-  if (q.get('film') === '1') {
-    let t = 0;
-    const step = (fps = 60) => {
-      const dt = 1 / fps; t += dt;
-      for (const el of LIVE) el.advance(dt);
-    };
-    window.__film = { duration: 10, step, seek(to, fps = 60) { while (t < to) step(fps); } };
-    window.__film.seek(parseFloat(q.get('seek')) || 1 / 60);
-  } else {
-    let last = performance.now();
-    function loop(now) {
-      const dt = Math.min(0.05, (now - last) / 1000);
-      last = now;
-      for (const el of LIVE) el.advance(dt);
-      requestAnimationFrame(loop);
-    }
+  // Animation Loop
+  let last = performance.now();
+  requestAnimationFrame(function loop(now) {
+    const dt = Math.min(0.05, (now - last) / 1000);
+    last = now;
+    for (const el of LIVE) el.advance(dt);
     requestAnimationFrame(loop);
-  }
+  });
 })();
