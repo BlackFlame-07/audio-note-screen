@@ -70,18 +70,16 @@ export function App() {
       const data = tavernFoley.getLiveAudioEnergy(now, isSpeaking && !isMicActive);
       setAudioEnergy(data.energy);
 
-      // Expand to 16 bands for visualizer
       const bands16 = [...data.bands, ...data.bands.map((b) => Math.max(0.04, b * 0.85))];
       setAudioBands(bands16);
 
-      // If real mic is active, automatically trigger speaking state when volume threshold is crossed
       if (isMicActive) {
         if (data.energy > 0.14) {
           if (!isSpeaking) setIsSpeaking(true);
           if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
           silenceTimerRef.current = window.setTimeout(() => {
             setIsSpeaking(false);
-          }, 900); // 900ms pause triggers scribe to look up at user!
+          }, 900);
         }
       }
     }, 50);
@@ -89,12 +87,10 @@ export function App() {
     return () => clearInterval(interval);
   }, [isSpeaking, isMicActive]);
 
-  // Toggle Speaking / Recording State
   const handleToggleSpeaking = () => {
     if (streamTimeoutRef.current) clearTimeout(streamTimeoutRef.current);
     if (!isSpeaking) {
       setIsSpeaking(true);
-      // If transcript was empty, start with a welcoming opener
       if (!transcript.trim()) {
         setTranscript('The night is quiet. I sit by the warm timber counter as the rain taps the roof...');
       }
@@ -103,14 +99,11 @@ export function App() {
     }
   };
 
-  // Toggle Real Browser Microphone & Speech Recognition
   const handleToggleMic = async () => {
     if (!isMicActive) {
       const ok = await tavernFoley.enableMicrophone();
       if (ok) {
         setIsMicActive(true);
-
-        // Try Web Speech API if supported
         const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
         if (SpeechRec) {
           try {
@@ -156,7 +149,6 @@ export function App() {
     }
   };
 
-  // Play Simulated Story Preset
   const handlePlayPreset = (title: string, storyText: string) => {
     if (streamTimeoutRef.current) clearTimeout(streamTimeoutRef.current);
 
@@ -172,11 +164,9 @@ export function App() {
         const nextChunk = words.slice(0, currentWordIdx + 1).join(' ');
         setTranscript(nextChunk);
         currentWordIdx++;
-        // Natural cadence with slight variation
         const delay = 160 + Math.random() * 120;
         streamTimeoutRef.current = window.setTimeout(streamNextWord, delay);
       } else {
-        // Finished story! Pause briefly then stop speaking
         streamTimeoutRef.current = window.setTimeout(() => {
           setIsSpeaking(false);
         }, 1200);
@@ -199,13 +189,13 @@ export function App() {
   };
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-[#07060d] p-0 sm:p-4 text-[#ece4d8] font-sans antialiased selection:bg-[#ab6630] selection:text-[#fef1cb]">
-      {/* Mobile Frame Container (Max width 420px, responsive, rounded corners on desktop) */}
-      <div className="relative flex w-full max-w-[420px] flex-col overflow-hidden bg-gradient-to-b from-[#140e0a] via-[#1a120c] to-[#0c0a08] sm:rounded-[36px] sm:border-[4px] sm:border-[#3d2918] sm:shadow-[0_24px_70px_rgba(0,0,0,0.95)]">
+    <div className="flex min-h-screen w-full items-center justify-center bg-[#05050c] p-0 sm:p-4 text-[#f5eee4] font-sans antialiased selection:bg-[#cc7a3d] selection:text-[#fff1c7]">
+      {/* Mobile Frame Container (Max width 430px, 920px tall on desktop) */}
+      <div className="relative flex w-full max-w-[430px] h-screen sm:h-[920px] flex-col overflow-hidden bg-gradient-to-b from-[#1c1008] via-[#24150b] to-[#0c0a08] sm:rounded-[40px] sm:border-[4px] sm:border-[#452513] sm:shadow-[0_28px_80px_rgba(0,0,0,0.95)]">
         
         {/* Mobile Status Bar (Time, Battery, Wifi) */}
-        <div className="flex items-center justify-between px-6 pt-3 pb-1 text-[11px] font-mono tracking-tight text-[#a69989]">
-          <span className="font-semibold text-[#fef1cb]">23:42</span>
+        <div className="flex h-8 shrink-0 items-center justify-between px-6 text-[11px] font-mono tracking-tight text-[#b0a394]">
+          <span className="font-semibold text-[#fff1c7]">23:42</span>
           <div className="flex items-center gap-2">
             <span>5G</span>
             <span>📶</span>
@@ -214,16 +204,16 @@ export function App() {
         </div>
 
         {/* Tavern Screen Header */}
-        <div className="flex items-center justify-between border-b border-[#362214] bg-[#21140c]/90 px-4 py-2.5">
+        <div className="flex h-11 shrink-0 items-center justify-between border-b border-[#452513] bg-[#24130a]/90 px-4">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#61371b] bg-[#361e12] text-base shadow-inner">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-[#824924] bg-[#452513] text-sm shadow-inner">
               📜
             </span>
             <div className="flex flex-col leading-tight">
-              <span className="font-serif text-sm font-bold tracking-wide text-[#fef1cb]">
+              <span className="font-serif text-sm font-bold tracking-wide text-[#fff1c7]">
                 The Scribe's Tavern
               </span>
-              <span className="text-[10px] font-mono text-[#ab6630]">
+              <span className="text-[10px] font-mono text-[#cc7a3d]">
                 Nightfall Audio Journal • 11 Nov
               </span>
             </div>
@@ -232,28 +222,28 @@ export function App() {
           <div className="flex items-center gap-1.5">
             <span
               className={`inline-block h-2 w-2 rounded-full ${
-                isSpeaking ? 'bg-[#ea7462] animate-ping' : 'bg-[#42a780]'
+                isSpeaking ? 'bg-[#e8584f] animate-ping' : 'bg-[#57be8d]'
               }`}
             />
-            <span className="text-[10px] font-mono text-[#a69989]">
+            <span className="text-[10px] font-mono font-medium text-[#b0a394]">
               {isSpeaking ? 'SCRIBING' : 'READY'}
             </span>
           </div>
         </div>
 
-        {/* Scrollable Content Area */}
-        <div className="flex flex-col gap-4 overflow-y-auto px-4 py-3.5" style={{ maxHeight: '820px' }}>
-          
-          {/* 1. Pixel Worlds Tavern Scene Canvas */}
-          <div className="shrink-0">
-            <TavernScribeCanvas
-              isSpeaking={isSpeaking}
-              audioEnergy={audioEnergy}
-              audioBands={audioBands}
-            />
-          </div>
+        {/* ══════ 1. TAVERN SCENE (COVERS 60% OF SCREEN) ══════ */}
+        <div className="shrink-0 w-full px-3 pt-2.5" style={{ height: '58%' }}>
+          <TavernScribeCanvas
+            isSpeaking={isSpeaking}
+            audioEnergy={audioEnergy}
+            audioBands={audioBands}
+          />
+        </div>
 
-          {/* 2. Audio Dictation Controls */}
+        {/* ══════ 2. LOWER 40% CONSOLE: AUDIO NOTES & PARCHMENT JOURNAL ══════ */}
+        <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-4 py-3 min-h-0 bg-gradient-to-t from-[#0e0906] to-[#1c1008]/40">
+          
+          {/* Audio Dictation Controls */}
           <div className="shrink-0">
             <TavernAudioControls
               isSpeaking={isSpeaking}
@@ -264,7 +254,7 @@ export function App() {
             />
           </div>
 
-          {/* 3. The Scribe's Parchment Journal & Past Logs */}
+          {/* The Scribe's Parchment Journal & Past Logs */}
           <div className="shrink-0">
             <ParchmentJournal
               transcript={transcript}
@@ -278,7 +268,7 @@ export function App() {
           </div>
 
           {/* Footer Note */}
-          <div className="py-2 text-center text-[10px] font-mono text-[#796e62]">
+          <div className="shrink-0 py-2 text-center text-[10px] font-mono text-[#877c70]">
             Crafted with /pixel-worlds • Pure Canvas2D & Bayer Dither
           </div>
         </div>
