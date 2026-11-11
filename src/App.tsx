@@ -1,287 +1,289 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { AsciiCanvas } from './components/AsciiCanvas';
-import { TactileControls } from './components/TactileControls';
-import { AsciiPixelEngine, AppState, ThemeMode } from './lib/asciiPixelEngine';
-import { audioSynth } from './lib/audioSynth';
+import React, { useState, useEffect, useRef } from 'react';
+import { TavernScribeCanvas } from './components/TavernScribeCanvas';
+import { TavernAudioControls } from './components/TavernAudioControls';
+import { ParchmentJournal, JournalEntry } from './components/ParchmentJournal';
+import { tavernFoley } from './lib/tavernFoley';
 
 export function App() {
-  const [theme, setTheme] = useState<ThemeMode>('DARK');
-  const [state, setState] = useState<AppState>('IDLE');
-  const [isRecordingPaused, setIsRecordingPaused] = useState<boolean>(false);
-  const [isTranscribing, setIsTranscribing] = useState<boolean>(false);
-  const [isZoomed, setIsZoomed] = useState<boolean>(false);
+  const [isSpeaking, setIsSpeaking] = useState<boolean>(false);
   const [isMicActive, setIsMicActive] = useState<boolean>(false);
-  const [isMuted, setIsMuted] = useState<boolean>(false);
-  const [elapsedMs, setElapsedMs] = useState<number>(0);
-  const [audioBands, setAudioBands] = useState<number[]>([0.1, 0.2, 0.4, 0.6, 0.5, 0.3, 0.2, 0.1]);
-  const [audioEnergy, setAudioEnergy] = useState<number>(0.08);
+  const [transcript, setTranscript] = useState<string>('');
+  const [elapsedSec, setElapsedSec] = useState<number>(0);
+  const [audioEnergy, setAudioEnergy] = useState<number>(0.05);
+  const [audioBands, setAudioBands] = useState<number[]>([
+    0.05, 0.08, 0.06, 0.04, 0.07, 0.05, 0.04, 0.03, 0.04, 0.06, 0.05, 0.03, 0.04, 0.05, 0.04, 0.02
+  ]);
 
-  // Singleton ASCII Pixel Swarm Engine
-  const engine = useMemo(() => new AsciiPixelEngine(), []);
+  const [savedEntries, setSavedEntries] = useState<JournalEntry[]>([
+    {
+      id: 'pre-1',
+      timestamp: '22:15 PM',
+      mood: '🛡️',
+      moodLabel: 'Battle-Worn',
+      transcript:
+        'A long, fierce march through client feedback today. We refined the anti-slop typography and tuned the animations to whole-pixel perfection. The tavern fire warms weary bones.',
+      duration: '01:14',
+      tags: ['#Nightfall', '#Craftsmanship', '#BattleWorn'],
+    },
+  ]);
+
+  // Audio timer & speech streaming refs
   const timerRef = useRef<number | null>(null);
+  const streamTimeoutRef = useRef<number | null>(null);
+  const speechRecognitionRef = useRef<any>(null);
+  const silenceTimerRef = useRef<number | null>(null);
 
-  // Timecode clock management
+  // Start ambient fire on first user interaction or mount
   useEffect(() => {
-    if (state === 'RECORDING' && !isRecordingPaused) {
-      const startTime = performance.now() - elapsedMs;
-      timerRef.current = window.setInterval(() => {
-        setElapsedMs(performance.now() - startTime);
-      }, 33);
-    } else if (state === 'PLAYING') {
-      timerRef.current = window.setInterval(() => {
-        setElapsedMs(Math.round(engine.readingProgressSec * 1000));
-      }, 33);
-    } else {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-      if (state === 'IDLE') {
-        setElapsedMs(0);
-      }
-    }
+    const handleFirstTouch = () => {
+      tavernFoley.startAmbientFire();
+      window.removeEventListener('click', handleFirstTouch);
+      window.removeEventListener('keydown', handleFirstTouch);
+    };
+    window.addEventListener('click', handleFirstTouch);
+    window.addEventListener('keydown', handleFirstTouch);
 
+    return () => {
+      window.removeEventListener('click', handleFirstTouch);
+      window.removeEventListener('keydown', handleFirstTouch);
+    };
+  }, []);
+
+  // Time recording counter
+  useEffect(() => {
+    if (isSpeaking) {
+      timerRef.current = window.setInterval(() => {
+        setElapsedSec((s) => s + 1);
+      }, 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [state, isRecordingPaused, engine]);
+  }, [isSpeaking]);
 
-  // Read live audio telemetry for the VU meters
+  // Live Audio Telemetry Loop
   useEffect(() => {
-    const meterInterval = setInterval(() => {
+    const interval = setInterval(() => {
       const now = performance.now() * 0.001;
-      const isSim = state === 'RECORDING' && !isRecordingPaused && !isMicActive;
-      const data = audioSynth.getLiveAudioEnergy(now, isSim);
+      const data = tavernFoley.getLiveAudioEnergy(now, isSpeaking && !isMicActive);
       setAudioEnergy(data.energy);
-      setAudioBands(data.bands);
+
+      // Expand to 16 bands for visualizer
+      const bands16 = [...data.bands, ...data.bands.map((b) => Math.max(0.04, b * 0.85))];
+      setAudioBands(bands16);
+
+      // If real mic is active, automatically trigger speaking state when volume threshold is crossed
+      if (isMicActive) {
+        if (data.energy > 0.14) {
+          if (!isSpeaking) setIsSpeaking(true);
+          if (silenceTimerRef.current) clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = window.setTimeout(() => {
+            setIsSpeaking(false);
+          }, 900); // 900ms pause triggers scribe to look up at user!
+        }
+      }
     }, 50);
 
-    return () => clearInterval(meterInterval);
-  }, [state, isRecordingPaused, isMicActive]);
+    return () => clearInterval(interval);
+  }, [isSpeaking, isMicActive]);
 
-  // Format MM:SS.ms (tabular-nums)
-  const formattedTimecode = useMemo(() => {
-    const totalSeconds = Math.floor(elapsedMs / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    const centiseconds = Math.floor((elapsedMs % 1000) / 10);
-
-    const mm = String(minutes).padStart(2, '0');
-    const ss = String(seconds).padStart(2, '0');
-    const cs = String(centiseconds).padStart(2, '0');
-    return `${mm}:${ss}.${cs}`;
-  }, [elapsedMs]);
-
-  // Core Actions
-  const handleToggleRecord = () => {
-    audioSynth.playClick(950);
-    if (state !== 'RECORDING') {
-      setState('RECORDING');
-      setIsRecordingPaused(false);
-      setIsTranscribing(false);
-      setElapsedMs(0);
-      engine.setState('RECORDING');
-      engine.setRecordingPaused(false);
+  // Toggle Speaking / Recording State
+  const handleToggleSpeaking = () => {
+    if (streamTimeoutRef.current) clearTimeout(streamTimeoutRef.current);
+    if (!isSpeaking) {
+      setIsSpeaking(true);
+      // If transcript was empty, start with a welcoming opener
+      if (!transcript.trim()) {
+        setTranscript('The night is quiet. I sit by the warm timber counter as the rain taps the roof...');
+      }
     } else {
-      const nextPaused = !isRecordingPaused;
-      setIsRecordingPaused(nextPaused);
-      engine.setRecordingPaused(nextPaused);
+      setIsSpeaking(false);
     }
   };
 
-  const handleTranscribe = () => {
-    audioSynth.playClick(1050);
-    if (state === 'RECORDING') {
-      setIsTranscribing(true);
-      setIsRecordingPaused(false);
-      setState('TRANSCRIBED');
-      engine.setState('TRANSCRIBED');
-      engine.triggerTranscribeTransition(() => {
-        setIsTranscribing(false);
-      });
-    }
-  };
+  // Toggle Real Browser Microphone & Speech Recognition
+  const handleToggleMic = async () => {
+    if (!isMicActive) {
+      const ok = await tavernFoley.enableMicrophone();
+      if (ok) {
+        setIsMicActive(true);
 
-  const handleTogglePlay = () => {
-    audioSynth.playClick(850);
-    if (state === 'TRANSCRIBED') {
-      setState('PLAYING');
-      engine.setState('PLAYING');
-      engine.readingProgressSec = 0;
-    } else if (state === 'PLAYING') {
-      setState('TRANSCRIBED');
-      engine.setState('TRANSCRIBED');
-    }
-  };
+        // Try Web Speech API if supported
+        const SpeechRec = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+        if (SpeechRec) {
+          try {
+            const recognition = new SpeechRec();
+            recognition.continuous = true;
+            recognition.interimResults = true;
+            recognition.lang = 'en-US';
 
-  const handleClear = () => {
-    audioSynth.playClick(800);
-    setState('IDLE');
-    setIsRecordingPaused(false);
-    setIsTranscribing(false);
-    setElapsedMs(0);
-    engine.setState('IDLE');
-    engine.setRecordingPaused(false);
-  };
+            recognition.onresult = (event: any) => {
+              let liveText = '';
+              for (let i = 0; i < event.results.length; i++) {
+                liveText += event.results[i][0].transcript + ' ';
+              }
+              setTranscript(liveText.trim());
+              setIsSpeaking(true);
+            };
 
-  // Keyboard navigation
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (document.activeElement?.tagName === 'INPUT') return;
+            recognition.onend = () => {
+              if (isMicActive) {
+                try {
+                  recognition.start();
+                } catch {
+                  // ignore
+                }
+              }
+            };
 
-      switch (e.key) {
-        case ' ':
-          e.preventDefault();
-          handleToggleRecord();
-          break;
-        case 't':
-        case 'T':
-          if (state === 'RECORDING') {
-            handleTranscribe();
+            recognition.start();
+            speechRecognitionRef.current = recognition;
+          } catch (e) {
+            console.warn('SpeechRecognition failed to start:', e);
           }
-          break;
-        case 'p':
-        case 'P':
-          if (state === 'TRANSCRIBED' || state === 'PLAYING') {
-            handleTogglePlay();
-          }
-          break;
-        case 'c':
-        case 'C':
-          handleClear();
-          break;
-        case 'z':
-        case 'Z':
-          audioSynth.playClick(1200);
-          setIsZoomed((prev) => !prev);
-          break;
-        case 'm':
-        case 'M':
-          audioSynth.playClick(1000);
-          setTheme((prev) => (prev === 'DARK' ? 'WHITE' : 'DARK'));
-          break;
+        }
+      }
+    } else {
+      tavernFoley.disableMicrophone();
+      setIsMicActive(false);
+      setIsSpeaking(false);
+      if (speechRecognitionRef.current) {
+        speechRecognitionRef.current.stop();
+        speechRecognitionRef.current = null;
+      }
+    }
+  };
+
+  // Play Simulated Story Preset
+  const handlePlayPreset = (title: string, storyText: string) => {
+    if (streamTimeoutRef.current) clearTimeout(streamTimeoutRef.current);
+
+    setIsSpeaking(true);
+    setTranscript('');
+    setElapsedSec(0);
+
+    const words = storyText.split(' ');
+    let currentWordIdx = 0;
+
+    const streamNextWord = () => {
+      if (currentWordIdx < words.length) {
+        const nextChunk = words.slice(0, currentWordIdx + 1).join(' ');
+        setTranscript(nextChunk);
+        currentWordIdx++;
+        // Natural cadence with slight variation
+        const delay = 160 + Math.random() * 120;
+        streamTimeoutRef.current = window.setTimeout(streamNextWord, delay);
+      } else {
+        // Finished story! Pause briefly then stop speaking
+        streamTimeoutRef.current = window.setTimeout(() => {
+          setIsSpeaking(false);
+        }, 1200);
       }
     };
 
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [state, isRecordingPaused]);
-
-  const handleMicToggle = async () => {
-    audioSynth.playClick(1150);
-    if (!isMicActive) {
-      const ok = await audioSynth.enableMicrophone();
-      setIsMicActive(ok);
-    } else {
-      audioSynth.disableMicrophone();
-      setIsMicActive(false);
-    }
+    streamTimeoutRef.current = window.setTimeout(streamNextWord, 200);
   };
 
-  const handleMuteToggle = () => {
-    const muted = audioSynth.toggleMute();
-    setIsMuted(muted);
+  const handleSaveEntry = (newEntry: JournalEntry) => {
+    setSavedEntries((prev) => [newEntry, ...prev]);
+    setTranscript('');
+    setElapsedSec(0);
+    setIsSpeaking(false);
+  };
+
+  const handleSelectSavedEntry = (entry: JournalEntry) => {
+    tavernFoley.playWoodClick(480);
+    setTranscript(entry.transcript);
   };
 
   return (
-    <div className="min-h-screen w-full flex flex-col items-center justify-center p-4 sm:p-8 bg-[#0C0C0E] text-[#EEEEEE] font-pixel select-none technical-grid relative">
-      {/* Studio Workbench Header & Telemetry Pill (Strict Monochrome) */}
-      <div className="w-full max-w-[390px] mb-3 flex items-center justify-between text-[9px] tracking-widest text-zinc-400">
-        <div className="flex items-center gap-2">
-          <span className="w-1.5 h-1.5 bg-white rounded-xs shadow-[0_0_6px_rgba(255,255,255,0.7)]" />
-          <span className="font-pixel text-[#EEEEEE]">
-            AUDIO_NOTE // MINIMAL
-          </span>
-        </div>
-
-        {/* Global Controls (Strict Monochrome: Zero Red) */}
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={() => {
-              audioSynth.playClick(1000);
-              setTheme((prev) => (prev === 'DARK' ? 'WHITE' : 'DARK'));
-            }}
-            className="px-2 py-0.5 rounded-md text-[8.5px] font-pixel tracking-wider border carbon-key-idle transition-all cursor-pointer"
-            title="Toggle Monochrome Theme (Dark / White)"
-          >
-            {theme === 'DARK' ? 'THEME: DARK' : 'THEME: WHITE'}
-          </button>
-
-          <button
-            onClick={handleMicToggle}
-            className={`px-2 py-0.5 rounded-md text-[8.5px] font-pixel tracking-wider border transition-all cursor-pointer ${
-              isMicActive
-                ? 'bg-white/20 border-white text-white shadow-[0_0_8px_rgba(255,255,255,0.4)]'
-                : 'carbon-key-idle'
-            }`}
-          >
-            {isMicActive ? 'MIC: LIVE' : 'MIC: SIM'}
-          </button>
-
-          <button
-            onClick={handleMuteToggle}
-            className={`px-2 py-0.5 rounded-md text-[8.5px] font-pixel tracking-wider border transition-all cursor-pointer ${
-              isMuted
-                ? 'bg-zinc-800/40 border-white/5 text-zinc-600'
-                : 'carbon-key-idle'
-            }`}
-            title="Toggle Web Audio Foley Clicks"
-          >
-            {isMuted ? 'FOLEY: OFF' : 'FOLEY: ON'}
-          </button>
-        </div>
-      </div>
-
-      {/* 390x844 MOBILE HARDWARE FRAME (Strict Monochrome Carbon Slate Chassis) */}
-      <div className="relative w-[390px] h-[844px] rounded-[48px] p-3 flex flex-col justify-between overflow-hidden carbon-frame shadow-2xl">
-        {/* Subtle Corner Crosshairs */}
-        <div className="absolute top-3 left-3 text-[8px] text-zinc-600 font-mono select-none pointer-events-none">+</div>
-        <div className="absolute top-3 right-3 text-[8px] text-zinc-600 font-mono select-none pointer-events-none">+</div>
-        <div className="absolute bottom-3 left-3 text-[8px] text-zinc-600 font-mono select-none pointer-events-none">+</div>
-        <div className="absolute bottom-3 right-3 text-[8px] text-zinc-600 font-mono select-none pointer-events-none">+</div>
-
-        {/* TOP 2/3 (HEIGHT: 556PX): RECESSED ASCII PIXEL CANVAS (366x532px) */}
-        <div className="w-full h-[556px] rounded-[28px] p-3 flex flex-col justify-between carbon-card relative">
-          <div className="w-[366px] h-[532px] mx-auto overflow-hidden rounded-[16px]">
-            <AsciiCanvas
-              engine={engine}
-              state={state}
-              theme={theme}
-              tapeName="MEMO_01"
-              isZoomed={isZoomed}
-              isSimulatingAudio={!isMicActive && !isRecordingPaused && state === 'RECORDING'}
-            />
+    <div className="flex min-h-screen w-full items-center justify-center bg-[#07060d] p-0 sm:p-4 text-[#ece4d8] font-sans antialiased selection:bg-[#ab6630] selection:text-[#fef1cb]">
+      {/* Mobile Frame Container (Max width 420px, responsive, rounded corners on desktop) */}
+      <div className="relative flex w-full max-w-[420px] flex-col overflow-hidden bg-gradient-to-b from-[#140e0a] via-[#1a120c] to-[#0c0a08] sm:rounded-[36px] sm:border-[4px] sm:border-[#3d2918] sm:shadow-[0_24px_70px_rgba(0,0,0,0.95)]">
+        
+        {/* Mobile Status Bar (Time, Battery, Wifi) */}
+        <div className="flex items-center justify-between px-6 pt-3 pb-1 text-[11px] font-mono tracking-tight text-[#a69989]">
+          <span className="font-semibold text-[#fef1cb]">23:42</span>
+          <div className="flex items-center gap-2">
+            <span>5G</span>
+            <span>📶</span>
+            <span>100% 🔋</span>
           </div>
         </div>
 
-        {/* BOTTOM 1/3 (HEIGHT: 264PX): LEAN TACTILE CONTROL PANEL */}
-        <TactileControls
-          state={state}
-          isRecordingPaused={isRecordingPaused}
-          isPlaying={state === 'PLAYING'}
-          isTranscribing={isTranscribing}
-          theme={theme}
-          timecode={formattedTimecode}
-          onToggleRecord={handleToggleRecord}
-          onTranscribe={handleTranscribe}
-          onTogglePlay={handleTogglePlay}
-          onClear={handleClear}
-          audioBands={audioBands}
-          audioEnergy={audioEnergy}
-        />
-      </div>
+        {/* Tavern Screen Header */}
+        <div className="flex items-center justify-between border-b border-[#362214] bg-[#21140c]/90 px-4 py-2.5">
+          <div className="flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-[#61371b] bg-[#361e12] text-base shadow-inner">
+              📜
+            </span>
+            <div className="flex flex-col leading-tight">
+              <span className="font-serif text-sm font-bold tracking-wide text-[#fef1cb]">
+                The Scribe's Tavern
+              </span>
+              <span className="text-[10px] font-mono text-[#ab6630]">
+                Nightfall Audio Journal • 11 Nov
+              </span>
+            </div>
+          </div>
 
-      {/* Lean HUD Footer */}
-      <div className="w-full max-w-[390px] mt-3 flex items-center justify-between text-[9px] font-pixel text-zinc-500 tracking-wider">
-        <span>SPACE:REC/PAUSE | T:TRANSCRIBE | P:PLAY | C:CLEAR</span>
-        <button
-          onClick={() => setIsZoomed((z) => !z)}
-          className="hover:text-white cursor-pointer transition-colors"
-        >
-          Z:ZOOM {isZoomed ? '[1.5×]' : '[1.0×]'}
-        </button>
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`inline-block h-2 w-2 rounded-full ${
+                isSpeaking ? 'bg-[#ea7462] animate-ping' : 'bg-[#42a780]'
+              }`}
+            />
+            <span className="text-[10px] font-mono text-[#a69989]">
+              {isSpeaking ? 'SCRIBING' : 'READY'}
+            </span>
+          </div>
+        </div>
+
+        {/* Scrollable Content Area */}
+        <div className="flex flex-col gap-4 overflow-y-auto px-4 py-3.5" style={{ maxHeight: '820px' }}>
+          
+          {/* 1. Pixel Worlds Tavern Scene Canvas */}
+          <div className="shrink-0">
+            <TavernScribeCanvas
+              isSpeaking={isSpeaking}
+              audioEnergy={audioEnergy}
+              audioBands={audioBands}
+            />
+          </div>
+
+          {/* 2. Audio Dictation Controls */}
+          <div className="shrink-0">
+            <TavernAudioControls
+              isSpeaking={isSpeaking}
+              onToggleSpeaking={handleToggleSpeaking}
+              onPlayPreset={handlePlayPreset}
+              isMicActive={isMicActive}
+              onToggleMic={handleToggleMic}
+            />
+          </div>
+
+          {/* 3. The Scribe's Parchment Journal & Past Logs */}
+          <div className="shrink-0">
+            <ParchmentJournal
+              transcript={transcript}
+              isSpeaking={isSpeaking}
+              durationSeconds={elapsedSec}
+              onSaveEntry={handleSaveEntry}
+              savedEntries={savedEntries}
+              onSelectSavedEntry={handleSelectSavedEntry}
+              onUpdateTranscript={setTranscript}
+            />
+          </div>
+
+          {/* Footer Note */}
+          <div className="py-2 text-center text-[10px] font-mono text-[#796e62]">
+            Crafted with /pixel-worlds • Pure Canvas2D & Bayer Dither
+          </div>
+        </div>
       </div>
     </div>
   );
 }
-
 export default App;

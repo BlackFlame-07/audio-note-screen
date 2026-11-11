@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tavern Scribe — Pixel Worlds Component</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=MedievalSharp&family=Cinzel:wght@600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #07060d;
+      color: #ece4d8;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .phone-container {
+      width: 100%;
+      max-width: 400px;
+      background: #140e0a;
+      border: 4px solid #3d2918;
+      border-radius: 32px;
+      overflow: hidden;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.9);
+      display: flex;
+      flex-direction: column;
+    }
+    .phone-header {
+      background: #21140c;
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #362214;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: #d4a02c;
+    }
+    .screen-body {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .tavern-frame {
+      border: 2px solid #543b23;
+      border-radius: 16px;
+      overflow: hidden;
+      background: #05050c;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.8);
+    }
+    tavern-scribe {
+      width: 100%;
+      display: block;
+      cursor: pointer;
+    }
+    .status-chip {
+      background: #16100a;
+      border: 1px solid #3d2918;
+      border-radius: 8px;
+      padding: 6px 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      color: #ab6630;
+    }
+    .parchment {
+      background: #fbf5e5;
+      border: 2px solid #8c7355;
+      border-radius: 12px;
+      padding: 14px;
+      color: #2c190f;
+      font-family: 'MedievalSharp', serif;
+      font-size: 14px;
+      line-height: 1.5;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      min-height: 90px;
+    }
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .btn-main {
+      background: linear-gradient(180deg, #442614, #2c190f);
+      border: 2px solid #d4a02c;
+      color: #fad089;
+      padding: 12px;
+      border-radius: 12px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.15s ease;
+    }
+    .btn-main:active { transform: translateY(2px); }
+    .btn-main.active {
+      background: linear-gradient(180deg, #7e2029, #54151c);
+      border-color: #ea7462;
+      color: #fef1cb;
+      box-shadow: 0 0 16px rgba(234,116,98,0.5);
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .btn-sub {
+      background: #21140c;
+      border: 1px solid #3d2918;
+      color: #a69989;
+      padding: 8px;
+      border-radius: 8px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10px;
+      cursor: pointer;
+      text-align: center;
+    }
+    .btn-sub:hover { border-color: #ab6630; color: #fef1cb; }
+  </style>
+</head>
+<body>
+
+  <div class="phone-container">
+    <div class="phone-header">
+      <span>📜 THE SCRIBE'S TAVERN</span>
+      <span>23:42 • 11 NOV</span>
+    </div>
+
+    <div class="screen-body">
+      <!-- 1. The Living Pixel World Component -->
+      <div class="tavern-frame">
+        <tavern-scribe id="scribe" state="listening" volume="0.1"></tavern-scribe>
+      </div>
+
+      <div class="status-chip">
+        <span id="status-label">👁 SCRIBE: AWAITING THY SPEECH</span>
+        <span id="state-badge">STOPPED (LOOKING AT YOU)</span>
+      </div>
+
+      <!-- 2. Parchment Journal Note -->
+      <div class="parchment" id="parchment-text">
+        "Speak thy day, traveler. The scribe awaits with pen poised, and the patrons at the counter have silenced their chatter to hear thy tale..."
+      </div>
+
+      <!-- 3. Tactile Audio Note Controls -->
+      <div class="controls">
+        <button class="btn-main" id="btn-toggle">
+          <span id="btn-icon">🗣️</span>
+          <span id="btn-text">HOLD / TAP TO SPEAK</span>
+        </button>
+
+        <div class="grid-2">
+          <button class="btn-sub" id="btn-tale-1">⚔️ Story 1: Midnight Bug</button>
+          <button class="btn-sub" id="btn-tale-2">🍺 Story 2: Hearth Toast</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="tavern-scribe.js"></script>
+  <script>
+    const scribe = document.getElementById('scribe');
+    const btnToggle = document.getElementById('btn-toggle');
+    const statusLabel = document.getElementById('status-label');
+    const stateBadge = document.getElementById('state-badge');
+    const parchmentText = document.getElementById('parchment-text');
+
+    let isSpeaking = false;
+
+    function setSpeaking(speaking, customText) {
+      isSpeaking = speaking;
+      if (isSpeaking) {
+        scribe.setAttribute('state', 'writing');
+        scribe.setAttribute('volume', '0.75');
+        btnToggle.classList.add('active');
+        document.getElementById('btn-icon').textContent = '🛑';
+        document.getElementById('btn-text').textContent = 'STOP RECORDING';
+        statusLabel.textContent = '✍️ SCRIBE: INSCRIBING TALE';
+        stateBadge.textContent = 'WRITING (HEAD DOWN)';
+        if (customText) parchmentText.textContent = customText;
+      } else {
+        scribe.setAttribute('state', 'listening');
+        scribe.setAttribute('volume', '0.05');
+        btnToggle.classList.remove('active');
+        document.getElementById('btn-icon').textContent = '🗣️';
+        document.getElementById('btn-text').textContent = 'HOLD / TAP TO SPEAK';
+        statusLabel.textContent = '👁 SCRIBE: AWAITING THY SPEECH';
+        stateBadge.textContent = 'STOPPED (LOOKING AT YOU)';
+      }
+    }
+
+    btnToggle.addEventListener('click', () => {
+      setSpeaking(!isSpeaking);
+      if (isSpeaking) {
+        parchmentText.textContent = '“The merge conflicts were vanquished under the flickering lantern light. Our tests ran green, and all is at peace...”';
+      }
+    });
+
+    document.getElementById('btn-tale-1').addEventListener('click', () => {
+      setSpeaking(true, '“We hunted the phantom bug across three asynchronous queues. In the eleventh hour, the memory leak was slain!”');
+    });
+
+    document.getElementById('btn-tale-2').addEventListener('click', () => {
+      setSpeaking(true, '“Another honest day of building finished. A tankard of spiced cider by the crackling fire, and rest for the dawn.”');
+    });
+  </script>
+</body>
+</html>
