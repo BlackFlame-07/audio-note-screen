@@ -56,13 +56,20 @@ export interface MemoChar {
   stagger?: number;
 }
 
-export interface AmbientTransitionPixel {
-  startX: number;
-  startY: number;
-  scatterX: number;
-  scatterY: number;
+export interface ContinuousTransitionPixel {
+  p0x: number;
+  p0y: number;
+  p1x: number;
+  p1y: number;
+  p2x: number;
+  p2y: number;
+  p3x: number;
+  p3y: number;
+  char: string;
+  isAccent: boolean;
   radius: number;
   stagger: number;
+  color?: string;
 }
 
 export interface MemoLineDef {
@@ -186,7 +193,7 @@ export class AsciiPixelEngine {
   public prevState: AppState = 'IDLE';
   public isTransformingToStop: boolean = false;
   public stopTransformProgress: number = 0;
-  public ambientTransitionPixels: AmbientTransitionPixel[] = [];
+  public continuousTransitionPixels: ContinuousTransitionPixel[] = [];
 
   public isEjecting: boolean = false;
   public ejectVelocity: number = 0;
@@ -351,61 +358,76 @@ export class AsciiPixelEngine {
   }
 
   /**
-   * Triggers seamless pixel dispersion of record mode elements
-   * and smooth flocking transformation into the words of stop mode.
+   * Triggers seamless continuous pixel dispersion of record mode elements
+   * and uninterrupted aerodynamic flocking into the words of stop mode without pausing.
    */
   public triggerStopTransition() {
     this.isTransformingToStop = true;
     this.stopTransformProgress = 0.0;
     this.readingProgressSec = 0.0;
-    this.ambientTransitionPixels = [];
+    this.continuousTransitionPixels = [];
 
-    // Capture exact record mode dots active on the screen right now
-    const liveDots = this.sampleCurrentRecordingDots();
-    // Sort dots spatially (primarily top-to-bottom) so paragraph lines assemble coherently
-    const sortedDots = [...liveDots].sort((a, b) => (a.y * 1.4 + a.x * 0.3) - (b.y * 1.4 + b.x * 0.3));
+    // Ensure layout coordinates are ready
+    if (!this.isCharLayoutReady) {
+      this.layoutMemoChars();
+    }
 
     const nonSpaceChars = this.memoChars.filter(c => c.char !== ' ');
     const totalTargets = nonSpaceChars.length;
 
-    let targetIdx = 0;
-    for (let i = 0; i < this.memoChars.length; i++) {
-      const c = this.memoChars[i];
-      if (c.char === ' ') continue;
+    // Sample live record dots from screen
+    const liveDots = this.sampleCurrentRecordingDots();
+    // Sort dots spatially top-to-bottom so upper dots flock to upper lines
+    const sortedDots = [...liveDots].sort((a, b) => (a.y * 1.4 + a.x * 0.3) - (b.y * 1.4 + b.x * 0.3));
 
-      const dot = sortedDots[targetIdx % Math.max(1, sortedDots.length)] || {
+    const totalDots = sortedDots.length;
+    const stride = totalDots > totalTargets ? totalDots / totalTargets : 1;
+
+    for (let i = 0; i < totalTargets; i++) {
+      const dotIdx = Math.min(totalDots - 1, Math.floor(i * stride));
+      const dot = sortedDots[dotIdx] || {
         x: this.width * (0.3 + Math.random() * 0.4),
         y: this.height * (0.3 + Math.random() * 0.4),
         r: 2.4,
         dirX: (Math.random() - 0.5) * 1.5,
         dirY: (Math.random() - 0.5) * 1.5,
       };
-      targetIdx++;
 
-      c.startX = dot.x;
-      c.startY = dot.y;
-      c.baseRadius = dot.r;
+      const target = nonSpaceChars[i];
 
-      // Disperse outward first away from blob core before converging
-      const scatterDist = 32 + (i * 13) % 48;
+      // P0: Exact start position on record halftone grid
+      const p0x = dot.x;
+      const p0y = dot.y;
+
+      // P3: Exact destination on word character
+      const p3x = target.charX;
+      const p3y = target.charY;
+
+      // P1: Outward burst apex along dispersion vector (Zero Pause!)
       const angle = Math.atan2(dot.dirY, dot.dirX) + ((i % 5) - 2) * 0.22;
-      c.scatterX = dot.x + Math.cos(angle) * scatterDist;
-      c.scatterY = dot.y + Math.sin(angle) * scatterDist;
-      c.stagger = (i % 24) * 0.005;
-    }
+      const burstDist = 45 + (i * 11) % 36;
+      const p1x = p0x + Math.cos(angle) * burstDist;
+      const p1y = p0y + Math.sin(angle) * burstDist;
 
-    // Remaining halftone dots become ambient stardust pixels that disperse and fade
-    for (let i = totalTargets; i < sortedDots.length; i++) {
-      const dot = sortedDots[i];
-      const scatterDist = 28 + (i * 11) % 44;
-      const angle = Math.atan2(dot.dirY, dot.dirX) + (Math.random() - 0.5) * 0.5;
-      this.ambientTransitionPixels.push({
-        startX: dot.x,
-        startY: dot.y,
-        scatterX: dot.x + Math.cos(angle) * scatterDist,
-        scatterY: dot.y + Math.sin(angle) * scatterDist,
+      // P2: Aerodynamic inflow control point smoothly curving into row
+      const p2x = p1x + (p3x - p1x) * 0.50 + Math.sin(i * 1.3) * 12;
+      const p2y = p1y + (p3y - p1y) * 0.74;
+
+      const stagger = (i % 24) * 0.0035;
+
+      this.continuousTransitionPixels.push({
+        p0x,
+        p0y,
+        p1x,
+        p1y,
+        p2x,
+        p2y,
+        p3x,
+        p3y,
+        char: target.char,
+        isAccent: target.isAccent,
         radius: dot.r,
-        stagger: (i % 28) * 0.005,
+        stagger,
       });
     }
   }
@@ -420,10 +442,9 @@ export class AsciiPixelEngine {
     this.isCharLayoutReady = false;
   }
 
-  public layoutMemoChars(ctx: CanvasRenderingContext2D) {
-    ctx.save();
-    ctx.font = '600 19px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
+  public layoutMemoChars(ctx?: CanvasRenderingContext2D) {
     const startX = 24;
+    const charWidth = 10.9;
 
     for (let lIdx = 0; lIdx < MEMO_LINE_DEFS.length; lIdx++) {
       const lineText = MEMO_LINE_DEFS[lIdx].text;
@@ -431,11 +452,17 @@ export class AsciiPixelEngine {
 
       for (let i = 0; i < lineChars.length; i++) {
         const c = lineChars[i];
-        c.charX = startX + ctx.measureText(lineText.substring(0, c.charIndexInLine)).width;
+        if (ctx) {
+          ctx.save();
+          ctx.font = '600 19px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
+          c.charX = startX + ctx.measureText(lineText.substring(0, c.charIndexInLine)).width;
+          ctx.restore();
+        } else {
+          c.charX = startX + c.charIndexInLine * charWidth;
+        }
         c.charY = LINE_Y_POSITIONS[lIdx];
       }
     }
-    ctx.restore();
     this.isCharLayoutReady = true;
   }
 
@@ -478,8 +505,8 @@ export class AsciiPixelEngine {
 
     // Transformation from Recording to Stop mode or continuous karaoke reading
     if (this.isTransformingToStop) {
-      // 1.35s cinematic pixel dispersion and seamless typographic transformation
-      this.stopTransformProgress += dt / 1.35;
+      // 1.30s cinematic continuous Bezier flocking and seamless typographic transformation (zero pause)
+      this.stopTransformProgress += dt / 1.30;
       if (this.stopTransformProgress >= 1.0) {
         this.stopTransformProgress = 1.0;
         this.isTransformingToStop = false;
@@ -970,32 +997,9 @@ export class AsciiPixelEngine {
 
       const progress = this.stopTransformProgress;
       const isTransforming = this.isTransformingToStop;
-      const headerAlpha = isTransforming ? Math.max(0, (progress - 0.65) / 0.35) : 1.0;
+      const headerAlpha = isTransforming ? Math.max(0, (progress - 0.70) / 0.30) : 1.0;
 
-      // 1. Ambient stardust pixels (record mode halftone dots dispersing outward & fading)
-      if (isTransforming && this.ambientTransitionPixels.length > 0) {
-        ctx.fillStyle = isWhite ? '#71717A' : '#FFFFFF';
-        for (let i = 0; i < this.ambientTransitionPixels.length; i++) {
-          const ap = this.ambientTransitionPixels[i];
-          const apStagger = ap.stagger || 0;
-          const effAP = Math.max(0, Math.min(1.0, (progress - apStagger) / (0.55 - apStagger)));
-          if (effAP >= 1.0) continue;
-
-          const easeAP = 1 - Math.pow(1 - effAP, 2.2);
-          const curX = ap.startX + (ap.scatterX - ap.startX) * easeAP;
-          const curY = ap.startY + (ap.scatterY - ap.startY) * easeAP;
-          const alpha = (1.0 - effAP) * (isWhite ? 0.38 : 0.65);
-          const size = Math.max(1.2, ap.radius * 1.8 * (1.0 - effAP * 0.38));
-
-          ctx.globalAlpha = alpha;
-          ctx.beginPath();
-          const corner = size * 0.34;
-          ctx.roundRect(curX - size / 2, curY - size / 2, size, size, corner);
-          ctx.fill();
-        }
-      }
-
-      // 2. Top Header: "Mon ●" + Date (fades in as words assemble)
+      // 1. Top Header: "Mon ●" + Date (fades in as words assemble)
       if (headerAlpha > 0.01) {
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
@@ -1029,68 +1033,47 @@ export class AsciiPixelEngine {
         ctx.stroke();
       }
 
-      // 3. Characters Rendering: Pure Pixel Dispersion & Typographic Morphing vs Karaoke
+      // 2. Characters Rendering: Zero-Pause Continuous Bezier Flocking vs Karaoke
       ctx.font = '600 19px "Pixelify Sans", "Silkscreen", "JetBrains Mono", monospace';
       ctx.textBaseline = 'middle';
       ctx.textAlign = 'left';
 
       if (isTransforming) {
-        // PURE HARDWARE PIXELS:
-        // Record mode elements disperse outward first as pure glowing pixels (no ASCII characters),
-        // flock along smooth organic streamlines, and seamlessly cross-fade into words at destination.
-        for (let i = 0; i < this.memoChars.length; i++) {
-          const mc = this.memoChars[i];
-          if (mc.char === ' ') continue;
-
-          const stagger = mc.stagger || 0;
+        // CONTINUOUS UNINTERRUPTED FLOCKING (Zero Pause, Single Continuous Bezier Curve)
+        // Every pixel that dispersed from the record mode blob flows seamlessly into its word destination without any pause.
+        for (let i = 0; i < this.continuousTransitionPixels.length; i++) {
+          const tp = this.continuousTransitionPixels[i];
+          const stagger = tp.stagger || 0;
           const effP = Math.max(0, Math.min(1.0, (progress - stagger) / (1.0 - stagger)));
 
-          const startX = mc.startX ?? (this.width / 2);
-          const startY = mc.startY ?? (this.height / 2);
-          const scatterX = mc.scatterX ?? mc.charX;
-          const scatterY = mc.scatterY ?? mc.charY;
-          const baseR = mc.baseRadius ?? 2.4;
+          // Smooth cubic ease-in-out: starts with burst momentum, glides without pausing, settles softly
+          const t = effP < 0.5 ? 4 * effP * effP * effP : 1 - Math.pow(-2 * effP + 2, 3) / 2;
+          const it = 1 - t;
 
-          let curX: number, curY: number;
+          // Pure Cubic Bezier evaluation (Zero Pause!)
+          const curX = it * it * it * tp.p0x + 3 * it * it * t * tp.p1x + 3 * it * t * t * tp.p2x + t * t * t * tp.p3x;
+          const curY = it * it * it * tp.p0y + 3 * it * it * t * tp.p1y + 3 * it * t * t * tp.p2y + t * t * t * tp.p3y;
+
           let pixelAlpha = 1.0;
           let glyphAlpha = 0.0;
-          let pixelSize = Math.max(2.2, baseR * 1.85);
+          let pixelSize = Math.max(2.0, tp.radius * 1.85);
 
-          if (effP < 0.36) {
-            // Phase 1: Pure outward dispersion of record mode elements
-            const p1 = effP / 0.36;
-            const ease1 = 1 - Math.pow(1 - p1, 2.2);
-            curX = startX + (scatterX - startX) * ease1;
-            curY = startY + (scatterY - startY) * ease1;
-            pixelAlpha = 0.88 + 0.12 * Math.sin(p1 * Math.PI);
-            pixelSize = Math.max(2.0, baseR * 1.85 * (1.0 - p1 * 0.18));
+          if (effP < 0.72) {
+            // In flight: pure glowing hardware pixel
+            pixelAlpha = 0.95;
+            pixelSize = Math.max(1.8, tp.radius * 1.85 * (1.0 - effP * 0.20));
             glyphAlpha = 0.0;
           } else {
-            // Phase 2: Magnetic flocking & streamline convergence to word coordinates
-            const p2 = Math.min(1.0, (effP - 0.36) / 0.64);
-            const ease2 = 1 - Math.pow(1 - p2, 3);
-            const streamlineCurve = Math.sin(p2 * Math.PI) * 9 * Math.sin(i * 1.35);
-
-            curX = scatterX + (mc.charX - scatterX) * ease2 + streamlineCurve * 0.3;
-            curY = scatterY + (mc.charY - scatterY) * ease2 + streamlineCurve;
-
-            if (p2 < 0.60) {
-              // Pure glowing pixel in flight
-              pixelAlpha = 0.90 + 0.10 * p2;
-              pixelSize = Math.max(1.8, baseR * 1.5 * (1.0 - p2 * 0.32));
-              glyphAlpha = 0.0;
-            } else {
-              // Seamless morph: pixel core dissolves while typographic letter solidifies
-              const morphT = (p2 - 0.60) / 0.40;
-              pixelAlpha = Math.max(0, 1.0 - morphT * 1.35);
-              glyphAlpha = Math.min(1.0, morphT * 1.25);
-              pixelSize = Math.max(1.2, baseR * (1.0 - morphT));
-            }
+            // Arriving at word slot: seamless cross-fade from pixel to letter
+            const morphT = (effP - 0.72) / 0.28;
+            pixelAlpha = Math.max(0, 1.0 - morphT * 1.4);
+            glyphAlpha = Math.min(1.0, morphT * 1.25);
+            pixelSize = Math.max(1.0, tp.radius * 1.85 * (1.0 - morphT));
           }
 
-          // 1. Render glowing hardware pixel (zero ASCII glyphs)
+          // 1. Draw pure glowing pixel
           if (pixelAlpha > 0.01) {
-            ctx.fillStyle = isWhite ? '#18181B' : '#FFFFFF';
+            ctx.fillStyle = tp.isAccent ? '#EF4444' : (isWhite ? '#18181B' : '#FFFFFF');
             ctx.globalAlpha = pixelAlpha;
             ctx.beginPath();
             const corner = pixelSize * 0.34;
@@ -1098,11 +1081,11 @@ export class AsciiPixelEngine {
             ctx.fill();
           }
 
-          // 2. Render solidified typographic letter as it locks into position
-          if (glyphAlpha > 0.01) {
-            ctx.fillStyle = isWhite ? '#18181B' : (progress > 0.88 ? '#E4E4E7' : '#FFFFFF');
+          // 2. Draw solidified character as it locks into position
+          if (glyphAlpha > 0.01 && tp.char) {
+            ctx.fillStyle = tp.isAccent ? '#EF4444' : (isWhite ? '#18181B' : (progress > 0.88 ? '#E4E4E7' : '#FFFFFF'));
             ctx.globalAlpha = glyphAlpha;
-            ctx.fillText(mc.char, curX, curY);
+            ctx.fillText(tp.char, curX, curY);
           }
         }
       } else {
